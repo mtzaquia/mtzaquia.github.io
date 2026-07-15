@@ -218,6 +218,7 @@ await router.present(SettingsRoute())</code></pre>
 
 <p>Departure has exactly three moving parts. Everything else in the framework is machinery to make these three compose.</p>
 
+<div class="table-scroll" role="region" aria-label="Departure concepts" tabindex="0">
 <table>
   <thead><tr><th style="width:28%">Concept</th><th>What it is</th><th style="width:34%">You write</th></tr></thead>
   <tbody>
@@ -238,6 +239,7 @@ await router.present(SettingsRoute())</code></pre>
     </tr>
   </tbody>
 </table>
+</div>
 
 <p>A route is just a struct with a <code>destination()</code> view builder:</p>
 
@@ -268,6 +270,7 @@ await router.present(SettingsRoute())</code></pre>
 
 <h3>Presentation styles</h3>
 
+<div class="table-scroll" role="region" aria-label="Presentation styles" tabindex="0">
 <table>
   <thead><tr><th>Declaration</th><th>Presentation</th><th>Notes</th></tr></thead>
   <tbody>
@@ -276,6 +279,7 @@ await router.present(SettingsRoute())</code></pre>
     <tr><td><code>Cover</code></td><td>Full-screen cover</td><td>Slide transition by default; <code>transition: .fade</code> gives a cross-dissolve rendered in a detached host.</td></tr>
   </tbody>
 </table>
+</div>
 
 <div class="callout">
 <strong>Design note.</strong> Because a <code>Route</code>’s default identity is its <em>type</em> (<code>ObjectIdentifier(Self.self)</code>), most routes need zero identity boilerplate. Conform a route to <code>Equatable</code> when its <em>value</em> identifies a destination — then, if an equal route already sits on the active path, Departure <strong>unwinds to it instead of stacking a duplicate</strong>. That single rule prevents the familiar “tapped the notification twice, got two copies of the screen” bug.
@@ -312,6 +316,7 @@ await router.present(SettingsRoute())</code></pre>
 
 <p>The three possible resolutions map directly onto the enum in <code>Route.swift</code>:</p>
 
+<div class="table-scroll" role="region" aria-label="Route resolutions" tabindex="0">
 <table>
   <thead><tr><th>Resolution</th><th>Router behavior</th></tr></thead>
   <tbody>
@@ -320,6 +325,7 @@ await router.present(SettingsRoute())</code></pre>
     <tr><td><code>.drop</code></td><td>Silently ignore the request.</td></tr>
   </tbody>
 </table>
+</div>
 
 <div class="callout warn">
 <strong>Keep resolution fast.</strong> Routing suspends until <code>resolveRoute()</code> returns. It’s the right place for a cheap state check (“am I logged in?”), not for a network round trip.
@@ -530,6 +536,7 @@ await router.perform(SaveDraftAction())</code></pre>
   Cover(SystemOutageRoute.self, priority: .critical)
 }</code></pre>
 
+<div class="table-scroll" role="region" aria-label="Route priorities" tabindex="0">
 <table>
   <thead><tr><th>Priority</th><th>Use</th><th>Mechanics</th></tr></thead>
   <tbody>
@@ -538,6 +545,7 @@ await router.perform(SaveDraftAction())</code></pre>
     <tr><td><code>.critical</code></td><td>Urgent flows above everything else</td><td>Own window above even <code>.high</code>.</td></tr>
   </tbody>
 </table>
+</div>
 
 <p>The rules discourage overuse: elevated flows are <strong>for interruption, not stacking</strong>. A high/critical request from normal content replaces any active presentation at that priority; requesting from an equal-or-higher context degrades to plain local routing; and a lower-priority request from outside an active elevated context simply doesn’t present.</p>
 
@@ -632,6 +640,7 @@ SaveButton().disabled(routePhase != .active)</code></pre>
 
 <h3>Where it shines, where to be careful</h3>
 
+<div class="table-scroll" role="region" aria-label="Departure strengths and tradeoffs" tabindex="0">
 <table>
   <thead><tr><th style="width:50%">👍 Shines</th><th>⚠️ Watch for</th></tr></thead>
   <tbody>
@@ -653,6 +662,7 @@ SaveButton().disabled(routePhase != .active)</code></pre>
     </tr>
   </tbody>
 </table>
+</div>
 
 <p>At its core, Departure treats navigation as a <strong>semantic graph the app can query</strong>, not a pile of booleans views happen to hold. Once presentation ownership is declarative, everything downstream — guarding, deduplication, cross-tab routing, typed dismissal, elevated windows — becomes a router policy instead of a per-screen puzzle. If your SwiftUI app has grown past the point where you can hold the navigation state in your head, this is a framework worth a weekend spike.</p>
 

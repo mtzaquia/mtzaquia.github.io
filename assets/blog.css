@@ -21,12 +21,22 @@
     font-size: 17px;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  html { scroll-behavior: smooth; }
+  html {
+    scroll-behavior: smooth;
+    max-width: 100%;
+    overflow-x: hidden;
+    overscroll-behavior-x: none;
+  }
   body {
     background: var(--bg);
     color: var(--text);
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     line-height: 1.65;
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+  @supports (overflow: clip) {
+    html, body { overflow-x: clip; }
   }
   main { max-width: 780px; margin: 0 auto; padding: 0 24px 120px; }
   a { color: var(--accent); text-decoration: none; }
@@ -69,7 +79,9 @@
   pre {
     background: var(--code-bg); border: 1px solid var(--border);
     border-radius: var(--radius); padding: 18px 20px; overflow-x: auto;
-    margin: 18px 0; font-size: 0.86rem; line-height: 1.6;
+    margin: 18px 0; max-width: 100%; min-width: 0;
+    font-size: 0.86rem; line-height: 1.6;
+    overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch;
   }
   code, pre { font-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace; }
   p code, li code, td code {
@@ -86,6 +98,12 @@
     border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden;
     display: table;
   }
+  .table-scroll {
+    width: 100%; max-width: 100%; margin: 20px 0; overflow-x: auto;
+    border-radius: var(--radius); overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+  .table-scroll table { margin: 0; }
   th, td { text-align: left; padding: 11px 14px; border-bottom: 1px solid var(--border); vertical-align: top; }
   th { background: var(--surface-2); font-weight: 600; font-size: 0.8rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-dim); }
   tr:last-child td { border-bottom: none; }
@@ -111,7 +129,10 @@
     display: flex; align-items: center; gap: 8px; font-weight: 600;
   }
   .widget-title::before { content: "◆"; color: var(--accent); font-size: 0.7rem; }
-  .widget-body { padding: 20px; }
+  .widget-body {
+    padding: 20px; min-width: 0; overflow-x: auto;
+    overscroll-behavior-x: contain; -webkit-overflow-scrolling: touch;
+  }
   button.ctl {
     background: var(--surface-2); color: var(--text); border: 1px solid var(--border);
     border-radius: 8px; padding: 8px 14px; font-size: 0.83rem; cursor: pointer;
@@ -194,7 +215,7 @@
     h2 { font-size: 1.35rem; margin-top: 54px; }
     h3 { font-size: 1.08rem; }
     pre { padding: 13px 14px; font-size: 0.78rem; }
-    table { display: block; overflow-x: auto; }
+    .table-scroll table { min-width: 100%; }
     th, td { padding: 9px 10px; }
     .callout { padding: 12px 14px; font-size: 0.9rem; }
     .widget-body { padding: 14px; }
