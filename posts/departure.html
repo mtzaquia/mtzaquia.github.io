@@ -1,0 +1,913 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Departure — Intent-Driven Routing for SwiftUI</title>
+<link rel="stylesheet" href="../assets/blog.css">
+<style>
+/* ---- post-specific styles: interactive widgets for this article ---- */
+/* ---------- pipeline widget ---------- */
+  .pipeline { display: flex; flex-direction: column; gap: 0; }
+  .pipe-stage {
+    display: flex; gap: 16px; align-items: flex-start; cursor: pointer;
+    padding: 12px 14px; border-radius: 10px; transition: background 0.2s; position: relative;
+  }
+  .pipe-stage:hover { background: rgba(94,176,255,0.05); }
+  .pipe-stage .node {
+    flex-shrink: 0; width: 34px; height: 34px; border-radius: 50%;
+    border: 2px solid var(--border); background: var(--surface-2);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.8rem; font-weight: 700; color: var(--text-dim);
+    transition: all 0.3s; z-index: 1;
+  }
+  .pipe-stage::before {
+    content: ""; position: absolute; left: 30px; top: 46px; bottom: -12px; width: 2px;
+    background: var(--border); transition: background 0.3s;
+  }
+  .pipe-stage:last-child::before { display: none; }
+  .pipe-stage.active .node { border-color: var(--accent); color: var(--accent); box-shadow: 0 0 0 5px rgba(94,176,255,0.15); }
+  .pipe-stage.done .node { border-color: var(--green); background: rgba(78,207,138,0.12); color: var(--green); }
+  .pipe-stage.done::before { background: var(--green); }
+  .pipe-stage h4 { font-size: 0.98rem; margin: 4px 0 3px; font-weight: 650; }
+  .pipe-stage p { margin: 0; font-size: 0.86rem; color: var(--text-dim); }
+  .pipe-detail {
+    margin-top: 16px; padding: 14px 16px; border: 1px dashed var(--border);
+    border-radius: 10px; font-size: 0.88rem; color: var(--text-dim); min-height: 74px;
+  }
+  .pipe-detail b { color: var(--text); }
+  .pipe-detail .outcome { display: inline-block; margin: 6px 8px 0 0; padding: 2px 10px; border-radius: 999px; font-size: 0.78rem; font-family: "SF Mono", ui-monospace, monospace; }
+  .oc-allow { border: 1px solid var(--green); color: var(--green); }
+  .oc-reroute { border: 1px solid var(--amber); color: var(--amber); }
+  .oc-drop { border: 1px solid var(--red); color: var(--red); }
+
+  /* ---------- simulator ---------- */
+  .sim-grid { display: grid; grid-template-columns: 220px 1fr; gap: 22px; }
+  @media (max-width: 640px) { .sim-grid { grid-template-columns: 1fr; } }
+  .phone {
+    width: 200px; height: 360px; border: 2px solid var(--border); border-radius: 26px;
+    background: #0a0d12; position: relative; overflow: hidden; margin: 0 auto;
+  }
+  .phone .screen-layer {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 6px;
+    transition: transform 0.35s cubic-bezier(0.32, 0.72, 0, 1), opacity 0.3s;
+    border-radius: 24px;
+  }
+  .screen-layer .scr-title { font-weight: 700; font-size: 0.95rem; }
+  .screen-layer .scr-style { font-size: 0.68rem; font-family: "SF Mono", ui-monospace, monospace; color: var(--text-dim); }
+  .screen-layer.style-sheet { top: 9%; border-top-left-radius: 16px; border-top-right-radius: 16px; box-shadow: 0 -12px 30px rgba(0,0,0,0.6); }
+  .layer-enter-push { transform: translateX(100%); }
+  .layer-enter-sheet { transform: translateY(100%); }
+  .layer-enter-cover { transform: translateY(100%); }
+  .layer-enter-fade { opacity: 0; }
+  .tree-panel { min-height: 300px; }
+  .tree-panel .tp-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-dim); margin-bottom: 10px; font-weight: 600; }
+  .tree-node {
+    display: flex; align-items: center; gap: 9px; padding: 7px 12px; margin: 5px 0;
+    border: 1px solid var(--border); border-radius: 9px; background: var(--surface-2);
+    font-size: 0.82rem; font-family: "SF Mono", ui-monospace, monospace;
+    animation: nodeIn 0.3s ease; position: relative;
+  }
+  @keyframes nodeIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+  .tree-node .style-tag { font-size: 0.66rem; padding: 1px 8px; border-radius: 999px; border: 1px solid; }
+  .st-root { color: var(--text-dim); border-color: var(--text-dim); }
+  .st-push { color: var(--accent); border-color: var(--accent); }
+  .st-sheet { color: var(--accent-2); border-color: var(--accent-2); }
+  .st-cover { color: var(--amber); border-color: var(--amber); }
+  .tree-node.current { border-color: var(--green); box-shadow: 0 0 0 3px rgba(78,207,138,0.12); }
+  .tree-node.current::after { content: "active scope"; margin-left: auto; font-size: 0.62rem; color: var(--green); }
+  .sim-log {
+    margin-top: 16px; padding: 10px 14px; background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 9px; font-family: "SF Mono", ui-monospace, monospace; font-size: 0.76rem;
+    color: var(--text-dim); max-height: 120px; overflow-y: auto;
+  }
+  .sim-log .lg-new { color: var(--green); }
+
+  /* ---------- action flow widget ---------- */
+  .ctl-row { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; font-size: 0.8rem; color: var(--text-dim); }
+  .ctl-row .lbl { min-width: 175px; font-weight: 600; }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .seg button {
+    background: transparent; border: none; border-right: 1px solid var(--border);
+    padding: 7px 13px; color: var(--text-dim); cursor: pointer; font-size: 0.78rem;
+    font-family: "SF Mono", ui-monospace, Menlo, monospace; transition: all 0.15s;
+  }
+  .seg button:last-child { border-right: none; }
+  .seg button:hover { color: var(--text); }
+  .seg button.on { background: rgba(94,176,255,0.12); color: var(--accent); }
+  .flow-area { margin-top: 16px; min-height: 260px; }
+  .flow-step {
+    display: flex; gap: 10px; align-items: flex-start; padding: 8px 12px; margin: 6px 0;
+    border: 1px solid var(--border); border-radius: 9px; background: var(--surface-2);
+    font-size: 0.84rem; animation: nodeIn 0.3s ease; line-height: 1.5;
+  }
+  .flow-step .actor {
+    flex-shrink: 0; font-size: 0.64rem; font-family: "SF Mono", ui-monospace, monospace;
+    padding: 2px 9px; border-radius: 999px; border: 1px solid; margin-top: 3px;
+    text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .ac-router { color: var(--accent); border-color: var(--accent); }
+  .ac-interceptor { color: var(--accent-2); border-color: var(--accent-2); }
+  .ac-action { color: var(--green); border-color: var(--green); }
+  .flow-step.warn { border-color: rgba(240,180,88,0.55); }
+  .flow-step.ok { border-color: rgba(78,207,138,0.55); }
+  .flow-step.err { border-color: rgba(242,112,138,0.55); }
+  .flow-step code { background: var(--code-bg); border: 1px solid var(--border); border-radius: 5px; padding: 0 5px; font-size: 0.82em; }
+  .flow-legend { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 14px; font-size: 0.72rem; color: var(--text-dim); }
+  .flow-legend span::before { content: "●"; margin-right: 5px; }
+  .lg-r::before { color: var(--accent); } .lg-i::before { color: var(--accent-2); } .lg-a::before { color: var(--green); }
+
+  /* ---------- branch demo ---------- */
+  .branch-wrap { display: flex; flex-direction: column; gap: 0; border: 1px solid var(--border); border-radius: 14px; overflow: hidden; background: #0a0d12; }
+  .branch-screens { display: grid; grid-template-columns: 1fr 1fr; }
+  .branch-col { padding: 18px; min-height: 190px; border-right: 1px solid var(--border); transition: opacity 0.3s, background 0.3s; }
+  .branch-col:last-child { border-right: none; }
+  .branch-col.inactive { opacity: 0.32; }
+  .branch-col.active-b { background: rgba(94,176,255,0.04); }
+  .branch-col h5 { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim); margin-bottom: 10px; }
+  .stack-card {
+    padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 7px;
+    font-size: 0.78rem; font-family: "SF Mono", ui-monospace, monospace; background: var(--surface-2);
+    animation: nodeIn 0.3s ease;
+  }
+  .tabbar { display: flex; border-top: 1px solid var(--border); }
+  .tabbar .tab {
+    flex: 1; text-align: center; padding: 11px; font-size: 0.82rem; cursor: pointer;
+    color: var(--text-dim); transition: all 0.2s; user-select: none;
+  }
+  .tabbar .tab.sel { color: var(--accent); font-weight: 650; background: rgba(94,176,255,0.07); }
+  .branch-note { font-size: 0.82rem; color: var(--text-dim); margin-top: 12px; min-height: 42px; }
+  .branch-note b { color: var(--amber); }
+
+  
+  /* ---- responsive tweaks for this post's widgets ---- */
+  @media (max-width: 640px) {
+    .phone { width: 180px; height: 330px; }
+    .pipe-stage { padding: 10px 8px; gap: 12px; }
+    .pipe-stage .node { width: 30px; height: 30px; }
+    .pipe-stage::before { left: 22px; top: 42px; }
+    .flow-step { font-size: 0.79rem; padding: 7px 9px; }
+    .ctl-row .lbl { min-width: 0; width: 100%; }
+    .branch-screens { grid-template-columns: 1fr; }
+    .branch-col { border-right: none; border-bottom: 1px solid var(--border); min-height: 0; padding: 14px; }
+    .branch-col:last-child { border-bottom: none; }
+    .sim-log { font-size: 0.7rem; }
+  }
+</style>
+</head>
+<body>
+
+<nav class="site-nav">
+  <a class="brand" href="../index.html"><span class="dot">◆</span> mz — engineering notes</a>
+  <span class="nav-links"><a href="../index.html">All posts</a></span>
+</nav>
+
+
+<header class="hero">
+  <div class="plane">🛫</div>
+  <h1>Departure: routing for SwiftUI that starts from&nbsp;intent, not from state</h1>
+  <p class="sub">A close look at <a href="https://github.com/mtzaquia/departure" target="_blank" rel="noopener">mtzaquia/departure</a> — a routing framework where screens declare the destinations they own, and any part of your app can simply <em>ask</em> for a route.</p>
+  <div class="meta-row">
+    <span class="pill">Branch <b>zaquia/2.0.0</b></span>
+    <span class="pill">Swift Package • <b>iOS 17+ / macOS 14+</b></span>
+    <span class="pill">MIT License</span>
+    <span class="pill">SwiftUI-first, UIKit-assisted</span>
+  </div>
+</header>
+
+<main>
+
+<nav class="toc">
+  <div class="toc-t">In this post</div>
+  <ol>
+    <li><a href="#problem">The problem with SwiftUI navigation at scale</a></li>
+    <li><a href="#model">The Departure model: routes, declarations, ownership</a></li>
+    <li><a href="#pipeline">What happens inside <code>present()</code> — interactive</a></li>
+    <li><a href="#simulator">Try the router — a live simulator</a></li>
+    <li><a href="#unwinding">Unwinding and returning values</a></li>
+    <li><a href="#actions">Actions: intent that routes itself</a></li>
+    <li><a href="#branches">Branches: tabs done right — interactive</a></li>
+    <li><a href="#priority">Priority: windows above the app</a></li>
+    <li><a href="#verdict">API reference & verdict</a></li>
+  </ol>
+</nav>
+
+<!-- ============================================================ -->
+<h2 id="problem"><span class="kicker">Part 1</span>The problem with SwiftUI navigation at scale</h2>
+
+<p class="lede">SwiftUI gives you navigation <em>primitives</em> — <code>NavigationStack</code>, <code>.sheet</code>, <code>.fullScreenCover</code> — but no navigation <em>architecture</em>. Every presentation is a boolean or an optional binding owned by some view, and the code that wants to navigate must know exactly which view owns that binding, and how it presents.</p>
+
+<p>That coupling is fine for three screens. It falls apart when:</p>
+<ul style="padding-left: 24px; margin: 14px 0;">
+  <li style="margin: 8px 0;">A <strong>deep link</strong> or push notification needs to open a screen from outside the view hierarchy entirely.</li>
+  <li style="margin: 8px 0;">A flow must be <strong>guarded</strong> — “show settings, unless the user is logged out, in which case show login first, then come back.”</li>
+  <li style="margin: 8px 0;">A <code>TabView</code> is involved, and each tab needs its <strong>own push path</strong> while modals stay global.</li>
+  <li style="margin: 8px 0;">Something genuinely urgent — an outage banner, a forced re-auth — must appear <strong>above whatever the user is doing</strong>, no matter how deep they are.</li>
+</ul>
+
+<p>Departure’s answer is a single inversion: <strong>the screen that owns a presentation declares it; the code that starts a flow only requests it.</strong> The framework connects the two at runtime by walking its own model of your navigation state and finding the <em>closest eligible owner</em>.</p>
+
+<pre><code class="swift">// Anywhere in the app — a button, a deep link handler, a view model:
+await router.present(SettingsRoute())</code></pre>
+
+<p>No bindings, no knowledge of <em>where</em> or <em>how</em> settings appears. That is decided by whichever screen declared it.</p>
+
+<!-- ============================================================ -->
+<h2 id="model"><span class="kicker">Part 2</span>The model: routes, declarations, ownership</h2>
+
+<p>Departure has exactly three moving parts. Everything else in the framework is machinery to make these three compose.</p>
+
+<table>
+  <thead><tr><th style="width:28%">Concept</th><th>What it is</th><th style="width:34%">You write</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><strong>Route</strong></td>
+      <td>A value describing a destination. It builds its own view and can veto or redirect its own presentation.</td>
+      <td><code>struct ProfileRoute: Route</code></td>
+    </tr>
+    <tr>
+      <td><strong>Declaration</strong></td>
+      <td>A statement by a view: “I own the presentation of this route type, in this style.”</td>
+      <td><code>.routes { Push(ProfileRoute.self) }</code></td>
+    </tr>
+    <tr>
+      <td><strong>Router</strong></td>
+      <td>An <code>@Observable</code> engine, installed once via <code>WithRouter</code>, read from the environment everywhere.</td>
+      <td><code>@Environment(Router.self)</code></td>
+    </tr>
+  </tbody>
+</table>
+
+<p>A route is just a struct with a <code>destination()</code> view builder:</p>
+
+<pre><code class="swift">struct ProfileRoute: Route {
+  let userID: String
+
+  func destination() -> some View {
+    ProfileView(userID: userID)
+  }
+}</code></pre>
+
+<p>And a view claims ownership with a result-builder modifier. The same route type may be declared in several scopes — <strong>the nearest owner to the active route wins</strong>, so a route can be a push in one context and a sheet in another:</p>
+
+<pre><code class="swift">struct HomeView: View {
+  @Environment(Router.self) private var router
+
+  var body: some View {
+    Button("View profile") {
+      Task { await router.present(ProfileRoute(userID: "42")) }
+    }
+    .routes {
+      Push(ProfileRoute.self)      // pushes onto the nearest NavigationStack
+      Sheet(SettingsRoute.self)    // modal, wrapped in its own NavigationStack
+      Cover(OnboardingRoute.self)  // full-screen cover
+    }
+  }
+}</code></pre>
+
+<h3>Presentation styles</h3>
+
+<table>
+  <thead><tr><th>Declaration</th><th>Presentation</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td><code>Push</code></td><td>Pushes onto the nearest <code>NavigationStack</code></td><td>Must be declared inside a stack.</td></tr>
+    <tr><td><code>Sheet</code></td><td>Modal sheet</td><td>Wraps destination in a <code>NavigationStack</code> by default; opt out with <code>providesNavigation: false</code>.</td></tr>
+    <tr><td><code>Cover</code></td><td>Full-screen cover</td><td>Slide transition by default; <code>transition: .fade</code> gives a cross-dissolve rendered in a detached host.</td></tr>
+  </tbody>
+</table>
+
+<div class="callout">
+<strong>Design note.</strong> Because a <code>Route</code>’s default identity is its <em>type</em> (<code>ObjectIdentifier(Self.self)</code>), most routes need zero identity boilerplate. Conform a route to <code>Equatable</code> when its <em>value</em> identifies a destination — then, if an equal route already sits on the active path, Departure <strong>unwinds to it instead of stacking a duplicate</strong>. That single rule prevents the familiar “tapped the notification twice, got two copies of the screen” bug.
+</div>
+
+<!-- ============================================================ -->
+<h2 id="pipeline"><span class="kicker">Part 3</span>What happens inside <code>present()</code></h2>
+
+<p>The most interesting part of Departure is what happens between <code>await router.present(route)</code> and the destination appearing. It’s a small pipeline, and each stage is a place you can hook in. <strong>Click each stage</strong> (or use the button) to walk through it.</p>
+
+<div class="widget">
+  <div class="widget-title">Interactive — the route resolution pipeline</div>
+  <div class="widget-body">
+    <div class="btn-row">
+      <button class="ctl primary" id="pipe-step">▶ Step through</button>
+      <button class="ctl" id="pipe-reset">Reset</button>
+    </div>
+    <div class="pipeline" id="pipe-stages"></div>
+    <div class="pipe-detail" id="pipe-detail">Click a stage above, or press <b>Step through</b>, to see what the router does at each point.</div>
+  </div>
+</div>
+
+<p>Stage 1 is where <strong>guarded routes</strong> live. Any route can implement <code>resolveRoute()</code> and decide, asynchronously, whether it should present at all:</p>
+
+<pre><code class="swift">struct ProtectedSettingsRoute: Route {
+  let isLoggedIn: Bool
+
+  func resolveRoute() async -> RouteResolution {
+    isLoggedIn ? .allow : .reroute(LoginRoute())
+  }
+
+  func destination() -> some View { SettingsView() }
+}</code></pre>
+
+<p>The three possible resolutions map directly onto the enum in <code>Route.swift</code>:</p>
+
+<table>
+  <thead><tr><th>Resolution</th><th>Router behavior</th></tr></thead>
+  <tbody>
+    <tr><td><code>.allow</code></td><td>Proceed to owner lookup and present. This is the default implementation.</td></tr>
+    <tr><td><code>.reroute(any Route)</code></td><td>Present a different route instead. The replacement is <em>also</em> resolved — you own the responsibility of not creating a loop.</td></tr>
+    <tr><td><code>.drop</code></td><td>Silently ignore the request.</td></tr>
+  </tbody>
+</table>
+
+<div class="callout warn">
+<strong>Keep resolution fast.</strong> Routing suspends until <code>resolveRoute()</code> returns. It’s the right place for a cheap state check (“am I logged in?”), not for a network round trip.
+</div>
+
+<!-- ============================================================ -->
+<h2 id="simulator"><span class="kicker">Part 4</span>Try the router</h2>
+
+<p>Below is a working miniature of Departure’s mental model. The phone shows what the user sees; the panel on the right shows the <strong>route scope path</strong> the router maintains internally (in the real framework, a <code>RouteForest</code> of <code>RouteScope</code> trees). Fire some routes and watch both sides stay in lockstep.</p>
+
+<div class="widget">
+  <div class="widget-title">Interactive — router simulator</div>
+  <div class="widget-body">
+    <div class="btn-row">
+      <button class="ctl" data-sim="push">present(ProfileRoute())</button>
+      <button class="ctl" data-sim="sheet">present(SettingsRoute())</button>
+      <button class="ctl" data-sim="cover">present(OnboardingRoute())</button>
+      <button class="ctl" data-sim="dup">present(ProfileRoute()) <span class="dim">again</span></button>
+    </div>
+    <div class="btn-row">
+      <button class="ctl" data-sim="unwind1">unwindRoute()</button>
+      <button class="ctl" data-sim="root">unwind(to: .root)</button>
+    </div>
+    <div class="sim-grid">
+      <div class="phone" id="phone"></div>
+      <div class="tree-panel">
+        <div class="tp-label">Router route path (nearest scope last)</div>
+        <div id="tree"></div>
+        <div class="sim-log" id="sim-log"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p>Two things worth noticing while you play:</p>
+<ul style="padding-left: 24px;">
+  <li style="margin: 8px 0;"><strong>Duplicate protection.</strong> With <code>ProfileRoute</code> already on the path, presenting it again doesn’t stack a copy — the router unwinds back to the existing one. That’s the <code>Equatable</code> rule from Part 2 in action.</li>
+  <li style="margin: 8px 0;"><strong><code>present()</code> is <code>async</code> and settles.</strong> The real API returns after the router’s state is updated, so you can sequence navigation (<code>await present(a); await present(b)</code>) without the timing hacks SwiftUI normally forces on you.</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="unwinding"><span class="kicker">Part 5</span>Unwinding and returning values</h2>
+
+<p>Dismissal in Departure is as declarative as presentation. Instead of chaining <code>dismiss()</code> calls up a modal stack, you unwind to a <em>target</em>:</p>
+
+<pre><code class="swift">await router.unwind(to: .root)             // everything, all branches
+await router.unwind(to: .nearestBranch)    // current tab back to its root
+await router.unwind(to: .topmostAncestor)  // one level below the topmost scope
+await router.unwind(to: .id("settings-flow"))  // a tagged scope</code></pre>
+
+<p>Tagging a scope makes it a stable target — the tag lives on the same <code>.routes</code> modifier you already use for declarations:</p>
+
+<pre><code class="swift">SettingsFlowView()
+  .routes(id: "settings-flow") {
+    Push(AdvancedSettingsRoute.self)
+  }</code></pre>
+
+<p><code>unwind(to:)</code> returns a <code>Bool</code> — whether a target was found — so multi-step flows can be written as plain, awaitable sequences:</p>
+
+<pre><code class="swift">if await router.unwind(to: .id("settings-flow")) {
+  await router.present(LoginRoute())
+}</code></pre>
+
+<h3>Typed payloads on the way out</h3>
+
+<p>Dismissal can also <strong>return a value</strong>. A presenting scope installs a typed <code>UnwindHandler</code>; the presented flow dismisses with a payload; the handler receives it — with the types checked for you:</p>
+
+<pre><code class="swift">// The presenter listens:
+.hooks {
+  UnwindHandler(EditorRoute.self, expecting: SaveResult.self) { result in
+    showToast(for: result)
+  }
+}
+
+// The editor, on its way out:
+await unwindRoute(payload: SaveResult.saved)</code></pre>
+
+<p>And for local dismissal from inside a route’s subtree, <code>@Environment(\.unwindRoute)</code> is the scope-bound equivalent of SwiftUI’s <code>dismiss</code> — with the nice property that SwiftUI’s own <code>dismiss()</code> (or an interactive swipe) still flows through the same unwind path and fires a matching handler.</p>
+
+<!-- ============================================================ -->
+<h2 id="actions"><span class="kicker">Part 6</span>Actions: intent that routes itself</h2>
+
+<p>The most unusual idea in Departure. An <code>Action</code> is a unit of user intent that must run in the right <em>place</em> — and can ask the router to get it there first:</p>
+
+<pre><code class="swift">struct SaveDraftAction: Action {
+  func attemptAction(in context: ActionContext) async throws(ActionInvocationError) {
+    guard context.isRunning(in: EditorRoute.self) else {
+      throw .reroute(EditorRoute())
+    }
+    // Save the draft.
+  }
+}
+
+await router.perform(SaveDraftAction())</code></pre>
+
+<p>If the action throws <code>.reroute(route)</code>, Departure presents that route through the normal pipeline, then <strong>retries the action exactly once</strong> in its new scope. “Save the draft” works whether or not the editor is currently on screen — the action carries its own precondition.</p>
+
+<p>Scopes can also <strong>intercept</strong> actions passing through them — wrap them, observe them, or consume them entirely:</p>
+
+<pre><code class="swift">.hooks {
+  ActionInterceptor(SaveDraftAction.self) { invocation in
+    do {
+      try await invocation()   // run the original; omit to consume it
+    } catch {
+      // Show a save error.
+    }
+  }
+}</code></pre>
+
+<p>Only the <em>active</em> route scope participates in interception, so a screen buried under a sheet can’t hijack an action that no longer belongs to it. It’s middleware for navigation-adjacent intent, with the scoping rules already solved.</p>
+
+<p>The combinations — routed or not, intercepted or not — are easiest to understand by watching them. Pick a scenario and run the action; indentation shows the call stack:</p>
+
+<div class="widget">
+  <div class="widget-title">Interactive — action handling, rerouting &amp; interception</div>
+  <div class="widget-body">
+    <div class="ctl-row">
+      <span class="lbl">Active scope when performed</span>
+      <span class="seg" id="seg-scope">
+        <button data-v="home" class="on">HomeView (no editor)</button>
+        <button data-v="editor">EditorRoute (active)</button>
+      </span>
+    </div>
+    <div class="ctl-row">
+      <span class="lbl">Interceptor on active scope</span>
+      <span class="seg" id="seg-int">
+        <button data-v="none" class="on">none</button>
+        <button data-v="wrap">wraps invocation()</button>
+        <button data-v="consume">consumes action</button>
+      </span>
+    </div>
+    <div class="btn-row" style="margin-top: 6px;">
+      <button class="ctl primary" id="af-run">▶ router.perform(SaveDraftAction())</button>
+      <button class="ctl" id="af-clear">Clear</button>
+    </div>
+    <div class="flow-area" id="flow-area"><p class="dim" style="font-size: 0.85rem;">Choose a scenario above and run the action.</p></div>
+    <div class="flow-legend">
+      <span class="lg-r">Router</span>
+      <span class="lg-i">ActionInterceptor (active scope)</span>
+      <span class="lg-a">SaveDraftAction.attemptAction(in:)</span>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="branches"><span class="kicker">Part 7</span>Branches: tabs done right</h2>
+
+<p>Tab bars are where most SwiftUI routing schemes break down: each tab needs its own independent push path, modals should be shared, and routing to a screen owned by <em>another</em> tab should switch tabs first. Departure models this with <strong>branches</strong>.</p>
+
+<pre><code class="swift">TabView(selection: $tab) {
+  NavigationStack { HomeView().routeBranch(AppTab.home) }
+    .tag(AppTab.home)
+
+  NavigationStack { WalletView().routeBranch(AppTab.wallet) }
+    .tag(AppTab.wallet)
+}
+.routes(branch: $tab) {
+  Cover(LoginRoute.self)                             // owned by the container
+  Branch(.home)   { Push(HomeDetailRoute.self) }     // discovery map per tab
+  Branch(.wallet) { Sheet(TransactionRoute.self) }
+}</code></pre>
+
+<p>The container’s <code>Branch(...)</code> entries are a <em>discovery map</em>: they let the router route into a tab that has never been built (a lazy tab), because the map — not the view — knows what lives there. Try it below: present <code>TransactionRoute</code> while sitting on the Home tab.</p>
+
+<div class="widget">
+  <div class="widget-title">Interactive — branch routing in a TabView</div>
+  <div class="widget-body">
+    <div class="btn-row">
+      <button class="ctl" data-br="homedetail">present(HomeDetailRoute())</button>
+      <button class="ctl" data-br="tx">present(TransactionRoute())</button>
+      <button class="ctl" data-br="nearest">unwind(to: .nearestBranch)</button>
+    </div>
+    <div class="branch-wrap">
+      <div class="branch-screens">
+        <div class="branch-col" id="col-home">
+          <h5>🏠 Home branch</h5>
+          <div id="stack-home"></div>
+        </div>
+        <div class="branch-col" id="col-wallet">
+          <h5>💳 Wallet branch</h5>
+          <div id="stack-wallet"></div>
+        </div>
+      </div>
+      <div class="tabbar">
+        <div class="tab sel" id="tab-home">Home</div>
+        <div class="tab" id="tab-wallet">Wallet</div>
+      </div>
+    </div>
+    <div class="branch-note" id="branch-note">Tabs can also be switched directly — each branch keeps its own push path either way.</div>
+  </div>
+</div>
+
+<p>The rules that make this predictable:</p>
+<ul style="padding-left: 24px;">
+  <li style="margin: 8px 0;">Branches keep <strong>independent push paths</strong>, but <strong>share modal presentations</strong> — a sheet from one branch replaces a live modal from another.</li>
+  <li style="margin: 8px 0;">Declarations <em>outside</em> any <code>Branch(...)</code> belong to the container — the natural home for cross-tab flows like login.</li>
+  <li style="margin: 8px 0;">Explicit <code>.routes { }</code> on a <code>.routeBranch(...)</code> view take precedence over the container’s map, so the same view works inside and outside a branched container.</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="priority"><span class="kicker">Part 8</span>Priority: windows above the app</h2>
+
+<p>Some flows can’t wait for the navigation stack to be in a convenient state — forced re-authentication, a critical outage screen. Departure lets a declaration claim <strong>elevated priority</strong>, and backs it with real UIKit windows (<code>PassThroughWindow</code> and a window bridge live in the framework’s UIKit layer):</p>
+
+<pre><code class="swift">.routes {
+  Sheet(ProfileRoute.self)                          // .normal
+  Cover(LoginRoute.self, priority: .high)
+  Cover(SystemOutageRoute.self, priority: .critical)
+}</code></pre>
+
+<table>
+  <thead><tr><th>Priority</th><th>Use</th><th>Mechanics</th></tr></thead>
+  <tbody>
+    <tr><td><code>.normal</code></td><td>Everyday navigation</td><td>Lives in the app’s own hierarchy.</td></tr>
+    <tr><td><code>.high</code></td><td>Important flows above normal navigation</td><td>Own window above the app.</td></tr>
+    <tr><td><code>.critical</code></td><td>Urgent flows above everything else</td><td>Own window above even <code>.high</code>.</td></tr>
+  </tbody>
+</table>
+
+<p>The rules discourage overuse: elevated flows are <strong>for interruption, not stacking</strong>. A high/critical request from normal content replaces any active presentation at that priority; requesting from an equal-or-higher context degrades to plain local routing; and a lower-priority request from outside an active elevated context simply doesn’t present.</p>
+
+<div class="callout">
+Because elevated presentations render in a separate window, custom environment values don’t flow in automatically. <code>WithRouter</code> takes a <code>windowDestination</code> closure for exactly this — forward what your destinations need:
+<pre style="margin-bottom: 0;"><code class="swift">WithRouter {
+  AppRoot()
+} windowDestination: { destination, environment in
+  destination.environment(\.myCustomKey, environment.myCustomKey)
+}</code></pre>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="verdict"><span class="kicker">Part 9</span>API reference &amp; verdict</h2>
+
+<p>The full surface fits in a handful of expandable cards:</p>
+
+<details class="api">
+  <summary>Presenting — <code>router.present(_:)</code>, <code>.routes { }</code></summary>
+  <div class="api-body">
+    <pre><code class="swift">// Declare (the owner):
+.routes(id: "optional-tag") {
+  Push(ProfileRoute.self)
+  Sheet(SettingsRoute.self, providesNavigation: false)
+  Cover(OnboardingRoute.self, transition: .fade)
+}
+
+// Request (anyone):
+await router.present(ProfileRoute(userID: "42"))</code></pre>
+    <p class="dim" style="font-size: 0.86rem;">Within one scope, the first declaration per route type wins; duplicates are ignored with a runtime warning. Nearest declaring scope to the active route wins across scopes.</p>
+  </div>
+</details>
+
+<details class="api">
+  <summary>Guarding — <code>resolveRoute()</code></summary>
+  <div class="api-body">
+    <pre><code class="swift">func resolveRoute() async -> RouteResolution {
+  isLoggedIn ? .allow : .reroute(LoginRoute())
+}
+// .allow (default) | .reroute(any Route) | .drop</code></pre>
+  </div>
+</details>
+
+<details class="api">
+  <summary>Unwinding — <code>router.unwind(to:)</code>, <code>\.unwindRoute</code>, <code>UnwindHandler</code></summary>
+  <div class="api-body">
+    <pre><code class="swift">await router.unwind(to: .root)                 // Bool result
+await router.unwind(to: .id("flow"), payload: SaveResult.saved)
+
+@Environment(\.unwindRoute) private var unwindRoute
+await unwindRoute(payload: SaveResult.saved)
+
+.hooks {
+  UnwindHandler(EditorRoute.self, expecting: SaveResult.self) { result in … }
+}</code></pre>
+  </div>
+</details>
+
+<details class="api">
+  <summary>Actions — <code>router.perform(_:)</code>, <code>ActionInterceptor</code></summary>
+  <div class="api-body">
+    <pre><code class="swift">struct SaveDraftAction: Action {
+  func attemptAction(in context: ActionContext) async throws(ActionInvocationError) {
+    guard context.isRunning(in: EditorRoute.self) else { throw .reroute(EditorRoute()) }
+    …
+  }
+}
+
+.hooks {
+  ActionInterceptor(SaveDraftAction.self) { invocation in
+    try await invocation()   // or consume by not calling
+  }
+}</code></pre>
+    <p class="dim" style="font-size: 0.86rem;">Note the typed throws — <code>throws(ActionInvocationError)</code> — a Swift 6-era signature that makes the reroute contract explicit in the type system.</p>
+  </div>
+</details>
+
+<details class="api">
+  <summary>Branches &amp; phase — <code>.routes(branch:)</code>, <code>.routeBranch(_:)</code>, <code>\.routePhase</code></summary>
+  <div class="api-body">
+    <pre><code class="swift">.routes(branch: $tab) {
+  Branch(.home) { Push(HomeDetailRoute.self) }
+}
+
+NavigationStack { HomeView().routeBranch(AppTab.home) }
+
+// React to being the current scope:
+@Environment(\.routePhase) private var routePhase
+SaveButton().disabled(routePhase != .active)</code></pre>
+  </div>
+</details>
+
+<h3>Where it shines, where to be careful</h3>
+
+<table>
+  <thead><tr><th style="width:50%">👍 Shines</th><th>⚠️ Watch for</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>Deep links and notifications: fire a route from anywhere; guards and branch selection do the rest.</td>
+      <td>Requires buying into the model app-wide — mixing Departure with manual <code>.sheet</code> bindings for the same flows will fight it.</td>
+    </tr>
+    <tr>
+      <td>Awaitable, sequenceable navigation (<code>await present…; await unwind…</code>) replaces dispatch-after hacks.</td>
+      <td><code>resolveRoute()</code> suspends routing — keep guards to cheap local checks.</td>
+    </tr>
+    <tr>
+      <td>Typed unwind payloads and action interception replace the closures and NotificationCenter plumbing teams usually write for these flows.</td>
+      <td>Reroute chains (guards + action reroutes) are your responsibility to keep loop-free.</td>
+    </tr>
+    <tr>
+      <td>Priority windows solve the “show this above everything” problem without hacky window code in the app.</td>
+      <td>Detached hosts (elevated priority, fade covers) need environment forwarding via <code>windowDestination</code>.</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>At its core, Departure treats navigation as a <strong>semantic graph the app can query</strong>, not a pile of booleans views happen to hold. Once presentation ownership is declarative, everything downstream — guarding, deduplication, cross-tab routing, typed dismissal, elevated windows — becomes a router policy instead of a per-screen puzzle. If your SwiftUI app has grown past the point where you can hold the navigation state in your head, this is a framework worth a weekend spike.</p>
+
+<footer>
+  Written with the source and docs of <a href="https://github.com/mtzaquia/departure" target="_blank" rel="noopener">github.com/mtzaquia/departure</a> (branch <code>zaquia/2.0.0</code>) open in the next window — the code samples come straight from the project’s documentation. The widgets above are little toys that mimic how the framework behaves; the real thing lives in the repo.
+</footer>
+
+</main>
+
+<script src="../assets/site.js"></script>
+<script>
+/* ---------------- pipeline widget ---------------- */
+(function () {
+  const stages = [
+    { n: "1", t: "Resolve the route", s: "The router calls resolveRoute() on the requested route and suspends until it answers.",
+      d: 'The route inspects app state and returns one of: <span class="outcome oc-allow">.allow</span><span class="outcome oc-reroute">.reroute(other)</span><span class="outcome oc-drop">.drop</span><br>On <b>.reroute</b>, the replacement route is resolved too — the framework retries the pipeline with it, and <b>you</b> are responsible for keeping the chain loop-free.' },
+    { n: "2", t: "Check for a duplicate", s: "If the route is Equatable and an equal route is already on the active path, stop.",
+      d: 'Rather than stacking a second copy, the router <b>unwinds back to the existing instance</b>. This is why routes whose value identifies a destination (e.g. <code style="font-size:0.9em">ReceiptRoute(receiptID:)</code>) should conform to Equatable.' },
+    { n: "3", t: "Find the closest owner", s: "Starting at the active route scope, walk toward the root looking for a declaration of this route type.",
+      d: 'The <b>nearest declaring scope wins</b>, so the same route type can present differently in different contexts. In a branched container, the branch discovery map can route into a tab that hasn’t even been built yet — selecting that branch first. If <b>no scope owns the route, nothing is presented</b>.' },
+    { n: "4", t: "Present with the declared style", s: "Push, sheet, or cover — with priority rules applied.",
+      d: 'A <b>Push</b> lands on the nearest NavigationStack; <b>Sheet</b>/<b>Cover</b> get their own stack unless opted out. Declarations with <b>.high</b> or <b>.critical</b> priority present in a dedicated window above the app.' },
+    { n: "5", t: "Settle and return", s: "present() returns once the router’s state is updated.",
+      d: 'Because the call is <b>async and settles</b>, flows compose as plain sequential code: <code style="font-size:0.9em">await router.unwind(to: .id("checkout")); await router.present(ReceiptRoute(…))</code> — no DispatchQueue delays.' },
+  ];
+  const cont = document.getElementById("pipe-stages");
+  const detail = document.getElementById("pipe-detail");
+  let idx = -1;
+  stages.forEach((st, i) => {
+    const div = document.createElement("div");
+    div.className = "pipe-stage";
+    div.innerHTML = `<div class="node">${st.n}</div><div><h4>${st.t}</h4><p>${st.s}</p></div>`;
+    div.addEventListener("click", () => select(i));
+    cont.appendChild(div);
+  });
+  const els = [...cont.children];
+  function select(i) {
+    idx = i;
+    els.forEach((el, j) => {
+      el.classList.toggle("active", j === i);
+      el.classList.toggle("done", j < i);
+    });
+    detail.innerHTML = `<b>Stage ${i + 1} — ${stages[i].t}.</b><br>${stages[i].d}`;
+  }
+  document.getElementById("pipe-step").addEventListener("click", () => select((idx + 1) % stages.length));
+  document.getElementById("pipe-reset").addEventListener("click", () => {
+    idx = -1;
+    els.forEach(el => el.classList.remove("active", "done"));
+    detail.innerHTML = "Click a stage above, or press <b>Step through</b>, to see what the router does at each point.";
+  });
+})();
+
+/* ---------------- router simulator ---------------- */
+(function () {
+  const phone = document.getElementById("phone");
+  const tree = document.getElementById("tree");
+  const logEl = document.getElementById("sim-log");
+  const colors = { root: "#151b26", push: "#182436", sheet: "#20182f", cover: "#2b2113" };
+  let path = [];
+
+  function log(msg, ok = true) {
+    const line = document.createElement("div");
+    line.textContent = "› " + msg;
+    if (ok) line.classList.add("lg-new");
+    logEl.prepend(line);
+    setTimeout(() => line.classList.remove("lg-new"), 900);
+    while (logEl.children.length > 6) logEl.lastChild.remove();
+  }
+
+  function render() {
+    phone.innerHTML = "";
+    tree.innerHTML = "";
+    const full = [{ name: "HomeView", style: "root" }, ...path];
+    full.forEach((s, i) => {
+      const layer = document.createElement("div");
+      layer.className = "screen-layer" + (s.style === "sheet" ? " style-sheet" : "");
+      layer.style.background = colors[s.style];
+      layer.style.zIndex = i;
+      if (s.style !== "sheet") layer.style.borderTop = "none";
+      layer.innerHTML = `<div class="scr-title">${s.name}</div><div class="scr-style">${s.style === "root" ? "root scope" : s.style}</div>`;
+      if (s.fresh) {
+        layer.classList.add(s.style === "push" ? "layer-enter-push" : s.style === "cover" ? "layer-enter-cover" : "layer-enter-sheet");
+        requestAnimationFrame(() => requestAnimationFrame(() => layer.classList.remove("layer-enter-push", "layer-enter-sheet", "layer-enter-cover")));
+        s.fresh = false;
+      }
+      phone.appendChild(layer);
+
+      const node = document.createElement("div");
+      node.className = "tree-node" + (i === full.length - 1 ? " current" : "");
+      node.style.marginLeft = (i * 18) + "px";
+      node.innerHTML = `<span class="style-tag st-${s.style}">${s.style}</span> ${s.name.replace("View", "Route")}`;
+      if (s.style === "root") node.innerHTML = `<span class="style-tag st-root">root</span> HomeView`;
+      tree.appendChild(node);
+    });
+  }
+
+  const routes = {
+    push:  { name: "ProfileView",    style: "push",  route: "ProfileRoute" },
+    sheet: { name: "SettingsView",   style: "sheet", route: "SettingsRoute" },
+    cover: { name: "OnboardingView", style: "cover", route: "OnboardingRoute" },
+  };
+
+  document.querySelectorAll("[data-sim]").forEach(btn => btn.addEventListener("click", () => {
+    const k = btn.dataset.sim;
+    if (k === "unwind1") {
+      if (!path.length) return log("unwindRoute() — nothing to unwind (returns false)", false);
+      const gone = path.pop();
+      log(`unwindRoute() — dismissed ${gone.route ?? gone.name}`);
+    } else if (k === "root") {
+      if (!path.length) return log("unwind(to: .root) — already at root", false);
+      path = [];
+      log("unwind(to: .root) — cleared every presented scope");
+    } else if (k === "dup") {
+      const i = path.findIndex(s => s.route === "ProfileRoute");
+      if (i >= 0) {
+        path = path.slice(0, i + 1);
+        log("ProfileRoute is Equatable & already on the path → unwound to it, no duplicate");
+      } else {
+        path.push({ ...routes.push, fresh: true });
+        log("no ProfileRoute on the path → presented (push)");
+      }
+    } else {
+      const r = routes[k];
+      const i = path.findIndex(s => s.route === r.route);
+      if (i >= 0) { path = path.slice(0, i + 1); log(`${r.route} already active → unwound to it`); }
+      else { path.push({ ...r, fresh: true }); log(`resolved .allow → nearest owner presents ${r.route} as ${r.style}`); }
+    }
+    render();
+  }));
+  render();
+  log("router ready — HomeView is the root scope");
+})();
+
+/* ---------------- action flow widget ---------------- */
+(function () {
+  let scope = "home";      // "home" | "editor"
+  let interceptor = "none"; // "none" | "wrap" | "consume"
+  let timers = [];
+  const area = document.getElementById("flow-area");
+
+  function seg(id, set) {
+    const el = document.getElementById(id);
+    el.querySelectorAll("button").forEach(b => b.addEventListener("click", () => {
+      el.querySelectorAll("button").forEach(x => x.classList.remove("on"));
+      b.classList.add("on");
+      set(b.dataset.v);
+    }));
+  }
+  seg("seg-scope", v => scope = v);
+  seg("seg-int", v => interceptor = v);
+
+  // actor: r = router, i = interceptor, a = action; depth = call-stack indent
+  function buildSteps() {
+    const s = [];
+    const r = (t, k, d = 0) => s.push({ a: "r", t, k, d });
+    const i = (t, k, d = 1) => s.push({ a: "i", t, k, d });
+    const a = (t, k, d) => s.push({ a: "a", t, k, d: d ?? (interceptor === "none" ? 1 : 2) });
+
+    r(`<code>router.perform(SaveDraftAction())</code> — dispatched from anywhere; the router resolves the <b>active route scope</b> (${scope === "editor" ? "EditorRoute" : "HomeView"}).`);
+
+    if (interceptor !== "none") {
+      i(`Active scope declares <code>ActionInterceptor(SaveDraftAction.self)</code> — it receives the invocation before the action runs.`);
+      if (interceptor === "consume") {
+        i(`The interceptor never calls <code>invocation()</code> — say, a confirmation prompt was declined.`, "warn");
+        r(`Action <b>consumed</b>. <code>attemptAction(in:)</code> never runs, no routing happens.`, "err");
+        return s;
+      }
+      i(`Interceptor calls <code>try await invocation()</code> — running the original action inside its wrapper.`);
+    }
+
+    a(`<code>attemptAction(in:)</code> runs in the active scope.`);
+    if (scope === "editor") {
+      a(`<code>guard context.isRunning(in: EditorRoute.self)</code> — <b>passes</b>, we are already in the editor.`);
+      if (interceptor === "wrap") i(`<code>invocation()</code> returns normally; the interceptor's wrapping code (error handling, logging…) completes.`);
+      s.push({ a: "a", t: `Draft saved. Done — <b>no routing was needed</b>.`, k: "ok", d: 0 });
+      return s;
+    }
+
+    a(`<code>guard context.isRunning(in: EditorRoute.self)</code> — <b>fails</b>. The action throws <code>.reroute(EditorRoute())</code>.`, "warn");
+    if (interceptor === "wrap") {
+      i(`The pending reroute surfaces to the interceptor as a <code>CancellationError</code> — rerouting is the router's job, not the interceptor's.`, "warn");
+    }
+    r(`Router presents <code>EditorRoute()</code> through the normal pipeline — resolve → find owner → present.`);
+    r(`Router <b>retries the action exactly once</b> in its new scope.`);
+    a(`<code>attemptAction(in:)</code> runs again — the guard now passes inside EditorRoute.`, null, 1);
+    s.push({ a: "a", t: `Draft saved — the action carried its own precondition and routed itself there.`, k: "ok", d: 0 });
+    return s;
+  }
+
+  function run() {
+    timers.forEach(clearTimeout); timers = [];
+    area.innerHTML = "";
+    const names = { r: ["ac-router", "router"], i: ["ac-interceptor", "interceptor"], a: ["ac-action", "action"] };
+    buildSteps().forEach((st, n) => {
+      timers.push(setTimeout(() => {
+        const div = document.createElement("div");
+        div.className = "flow-step" + (st.k ? " " + st.k : "");
+        div.style.marginLeft = (st.d * 26) + "px";
+        div.innerHTML = `<span class="actor ${names[st.a][0]}">${names[st.a][1]}</span><span>${st.t}</span>`;
+        area.appendChild(div);
+      }, n * 480));
+    });
+  }
+  document.getElementById("af-run").addEventListener("click", run);
+  document.getElementById("af-clear").addEventListener("click", () => {
+    timers.forEach(clearTimeout); timers = [];
+    area.innerHTML = '<p class="dim" style="font-size: 0.85rem;">Choose a scenario above and run the action.</p>';
+  });
+})();
+
+/* ---------------- branch demo ---------------- */
+(function () {
+  const stacks = { home: ["HomeView"], wallet: ["WalletView"] };
+  let sel = "home";
+  const note = document.getElementById("branch-note");
+
+  function render() {
+    ["home", "wallet"].forEach(b => {
+      const el = document.getElementById("stack-" + b);
+      el.innerHTML = "";
+      stacks[b].forEach((s, i) => {
+        const c = document.createElement("div");
+        c.className = "stack-card";
+        c.style.marginLeft = (i * 14) + "px";
+        c.textContent = s;
+        el.appendChild(c);
+      });
+      document.getElementById("col-" + b).classList.toggle("inactive", sel !== b);
+      document.getElementById("col-" + b).classList.toggle("active-b", sel === b);
+      document.getElementById("tab-" + b).classList.toggle("sel", sel === b);
+    });
+  }
+  function setNote(html) { note.innerHTML = html; }
+
+  document.getElementById("tab-home").addEventListener("click", () => { sel = "home"; setNote("Switched tabs directly. Note the Wallet branch kept its own push path."); render(); });
+  document.getElementById("tab-wallet").addEventListener("click", () => { sel = "wallet"; setNote("Switched tabs directly. Note the Home branch kept its own push path."); render(); });
+
+  document.querySelectorAll("[data-br]").forEach(btn => btn.addEventListener("click", () => {
+    const k = btn.dataset.br;
+    if (k === "homedetail") {
+      if (sel !== "home") { sel = "home"; setNote("<b>HomeDetailRoute belongs to Branch(.home)</b> — the router selected the Home branch first, then pushed."); }
+      else setNote("Home branch owns HomeDetailRoute → pushed onto its NavigationStack.");
+      if (!stacks.home.includes("HomeDetailView")) stacks.home.push("HomeDetailView");
+    } else if (k === "tx") {
+      if (sel !== "wallet") { sel = "wallet"; setNote("<b>TransactionRoute belongs to Branch(.wallet)</b> — the router switched branches automatically before presenting the sheet."); }
+      else setNote("Wallet branch owns TransactionRoute → presented as a sheet.");
+      if (!stacks.wallet.includes("TransactionSheet ▤")) stacks.wallet.push("TransactionSheet ▤");
+    } else {
+      stacks[sel] = [stacks[sel][0]];
+      setNote(`unwind(to: .nearestBranch) — the <b>${sel}</b> branch returned to its root; the other branch is untouched.`);
+    }
+    render();
+  }));
+  render();
+})();
+</script>
+</body>
+</html>
