@@ -1,7 +1,7 @@
 /* site.js — shared helpers: Swift syntax highlighter for pre>code blocks */
 (function () {
   const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const re = /(\/\/[^\n]*)|("(?:[^"\\]|\\.)*")|\b(struct|enum|protocol|extension|func|var|let|case|return|await|async|throws|throw|try|guard|else|if|in|import|some|any|do|catch|public|private|final|class|static|where|associatedtype|nonisolated)\b|(\.(?:allow|reroute|drop|root|nearestBranch|topmostAncestor|high|critical|normal|fade|home|wallet|saved|active)\b)|\b([A-Z][A-Za-z0-9]*)\b/g;
+  const re = /(\/\/[^\n]*)|("(?:[^"\\]|\\.)*")|\b(struct|enum|protocol|extension|func|var|let|case|return|await|async|throws|throw|try|guard|else|if|in|import|some|any|do|catch|public|private|final|class|static|where|associatedtype|typealias|switch|while|nonisolated)\b|(\.(?:allow|reroute|drop|root|nearestBranch|topmostAncestor|high|critical|normal|fade|home|wallet|saved|active|continue|restart|get|post|put|patch|delete|shared|iso8601)\b)|\b([A-Z][A-Za-z0-9]*)\b/g;
   document.querySelectorAll("pre code").forEach(el => {
     const src = el.textContent;
     let out = "", last = 0, m;

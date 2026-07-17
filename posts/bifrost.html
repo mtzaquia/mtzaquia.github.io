@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bifrost — Typed REST Networking for Swift</title>
+<link rel="stylesheet" href="../assets/blog.css">
+<style>
+/* ---- post-specific styles: interactive widgets for this article ---- */
+  .method-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+  .method-btn {
+    background: var(--surface-2); color: var(--text-dim); border: 1px solid var(--border);
+    border-radius: 8px; padding: 7px 13px; cursor: pointer; font: 0.76rem "SF Mono", ui-monospace, monospace;
+  }
+  .method-btn:hover { border-color: var(--accent); color: var(--text); }
+  .method-btn.on { border-color: var(--accent); color: var(--accent); background: rgba(94,176,255,0.1); }
+  .request-card {
+    border: 1px solid var(--border); background: #0a0d12; border-radius: 10px;
+    overflow: hidden; font: 0.78rem/1.55 "SF Mono", ui-monospace, monospace;
+  }
+  .request-top { padding: 11px 14px; color: var(--green); border-bottom: 1px solid var(--border); white-space: nowrap; overflow-x: auto; }
+  .request-top b { color: var(--accent); }
+  .wire-grid { display: grid; grid-template-columns: 92px 1fr; }
+  .wire-grid > div { padding: 9px 13px; border-bottom: 1px solid var(--border); }
+  .wire-grid > div:nth-last-child(-n+2) { border-bottom: none; }
+  .wire-label { color: var(--text-dim); border-right: 1px solid var(--border); text-transform: uppercase; font-size: 0.66rem; letter-spacing: 0.08em; }
+  .wire-value { color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
+  .wire-value.empty { color: var(--text-dim); font-style: italic; }
+  .lab-note { margin-top: 12px; color: var(--text-dim); font-size: 0.8rem; min-height: 42px; }
+
+  /* ---------- request/response pipeline ---------- */
+  .bridge { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; align-items: stretch; }
+  .bridge-stage {
+    position: relative; min-width: 0; padding: 12px 8px; border: 1px solid var(--border);
+    border-radius: 9px; background: var(--surface-2); text-align: center; cursor: pointer;
+    color: var(--text); font-family: inherit;
+    transition: border-color 0.2s, background 0.2s, transform 0.2s;
+  }
+  .bridge-stage:hover { border-color: var(--accent); transform: translateY(-2px); }
+  .bridge-stage.active { border-color: var(--accent); background: rgba(94,176,255,0.1); box-shadow: 0 0 0 3px rgba(94,176,255,0.1); }
+  .bridge-stage.done { border-color: var(--green); }
+  .bridge-stage .bs-num { display: block; color: var(--text-dim); font: 0.62rem "SF Mono", ui-monospace, monospace; margin-bottom: 5px; }
+  .bridge-stage .bs-name { display: block; font-size: 0.76rem; font-weight: 650; line-height: 1.25; }
+  .bridge-detail {
+    margin-top: 16px; min-height: 98px; padding: 14px 16px; border: 1px dashed var(--border);
+    border-radius: 10px; color: var(--text-dim); font-size: 0.86rem;
+  }
+  .bridge-detail b { color: var(--text); }
+  .result-chip { display: inline-block; margin: 8px 6px 0 0; padding: 2px 9px; border: 1px solid; border-radius: 999px; font: 0.7rem "SF Mono", ui-monospace, monospace; }
+  .rc-continue { color: var(--green); }
+  .rc-return { color: var(--accent-2); }
+  .rc-restart { color: var(--amber); }
+
+  /* ---------- auth replay simulator ---------- */
+  .auth-status {
+    display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px;
+    font: 0.74rem "SF Mono", ui-monospace, monospace;
+  }
+  .auth-pill { border: 1px solid var(--border); border-radius: 999px; padding: 4px 10px; color: var(--text-dim); }
+  .auth-pill b { color: var(--text); }
+  .auth-path { display: flex; flex-direction: column; gap: 7px; min-height: 250px; }
+  .auth-event {
+    display: grid; grid-template-columns: 76px 1fr auto; gap: 10px; align-items: center;
+    padding: 9px 12px; border: 1px solid var(--border); border-radius: 9px;
+    background: var(--surface-2); animation: nodeIn 0.25s ease; font-size: 0.8rem;
+  }
+  .auth-event .who { font: 0.62rem "SF Mono", ui-monospace, monospace; text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent); }
+  .auth-event .event-meta { font: 0.68rem "SF Mono", ui-monospace, monospace; color: var(--text-dim); }
+  .auth-event.warn { border-color: rgba(240,180,88,0.55); }
+  .auth-event.good { border-color: rgba(78,207,138,0.55); }
+  .auth-event.restart { border-color: rgba(157,123,255,0.6); }
+  .auth-empty { color: var(--text-dim); font-size: 0.84rem; padding: 16px 2px; }
+
+  /* ---------- compact architecture map ---------- */
+  .ownership-map { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; gap: 10px; align-items: center; }
+  .own-box { border: 1px solid var(--border); background: var(--surface-2); border-radius: 10px; padding: 14px; text-align: center; }
+  .own-box b { display: block; color: var(--accent); font-size: 0.84rem; margin-bottom: 5px; }
+  .own-box span { color: var(--text-dim); font-size: 0.75rem; }
+  .own-arrow { color: var(--text-dim); }
+
+  @media (max-width: 640px) {
+    .bridge { grid-template-columns: repeat(3, minmax(104px, 1fr)); min-width: 344px; }
+    .wire-grid { grid-template-columns: 74px 1fr; }
+    .auth-event { grid-template-columns: 65px 1fr; }
+    .auth-event .event-meta { grid-column: 2; }
+    .ownership-map { grid-template-columns: 1fr; }
+    .own-arrow { transform: rotate(90deg); text-align: center; }
+  }
+</style>
+</head>
+<body>
+
+<nav class="site-nav">
+  <a class="brand" href="../index.html"><span class="dot">◆</span> mz — engineering notes</a>
+  <span class="nav-links"><a href="../index.html">All posts</a></span>
+</nav>
+
+<header class="hero">
+  <div class="plane">❄️</div>
+  <h1>Bifrost: typed REST networking where the request owns the contract</h1>
+  <p class="sub">A close look at <a href="https://github.com/mtzaquia/bifrost" target="_blank" rel="noopener">mtzaquia/bifrost</a> — a small Swift networking framework that turns an endpoint into one value, one response type, and one interception pipeline.</p>
+  <div class="meta-row">
+    <span class="pill">Source <b>main</b> • Version <b>3.0.4</b></span>
+    <span class="pill">Swift Package • <b>iOS 17+ / macOS 11+</b></span>
+    <span class="pill">Swift <b>6.2</b></span>
+    <span class="pill">MIT License</span>
+  </div>
+</header>
+
+<main>
+
+<nav class="toc">
+  <div class="toc-t">In this post</div>
+  <ol>
+    <li><a href="#problem">The networking layer that grows sideways</a></li>
+    <li><a href="#model">The Bifrost model: API, request, response</a></li>
+    <li><a href="#encoding">From Swift value to wire request — interactive</a></li>
+    <li><a href="#pipeline">The complete response pipeline — interactive</a></li>
+    <li><a href="#request-interceptors">Request interception: mutate or mock</a></li>
+    <li><a href="#response-interceptors">Response interception before decoding</a></li>
+    <li><a href="#restart">Refresh a 401 and replay — interactive</a></li>
+    <li><a href="#edges">Errors, cancellation, logging, and sharp edges</a></li>
+    <li><a href="#verdict">API reference &amp; verdict</a></li>
+  </ol>
+</nav>
+
+<!-- ============================================================ -->
+<h2 id="problem"><span class="kicker">Part 1</span>The networking layer that grows sideways</h2>
+
+<p class="lede">Most networking layers begin with one generic function: give it a path, a method, maybe a body, and ask it to decode some type. Then reality arrives — authentication, shared query items, mock responses, token refresh, logging, per-endpoint headers — and that one function becomes the most conditional code in the app.</p>
+
+<p>The deeper problem is not <code>URLSession</code>. It is that the endpoint’s inputs, wire rules, and output type live in separate places. A call site can ask the wrong endpoint for the wrong model, and middleware must reverse-engineer an untyped request to understand what is happening.</p>
+
+<pre><code class="swift">let request = GetUser(id: userID)
+let user = try await AppAPI().response(for: request)
+// user is GetUser.Response — inferred from the request itself</code></pre>
+
+<p>Bifrost makes the request value the unit of networking. The request is <code>Encodable</code>, names its own path and method, and declares an associated <code>Decodable</code> response. The API supplies shared policy; interceptors handle cross-cutting behavior; the call site gets one typed async operation.</p>
+
+<div class="callout">
+<strong>The useful constraint.</strong> You cannot call <code>response(for: GetUser(...))</code> and accidentally decode <code>[Article]</code>. The generic return type is fixed by <code>GetUser.Response</code>, so the endpoint contract travels as one Swift type.
+</div>
+
+<!-- ============================================================ -->
+<h2 id="model"><span class="kicker">Part 2</span>The model: API, request, response</h2>
+
+<p>Bifrost has three pieces, with a deliberate split between shared infrastructure and endpoint-specific data.</p>
+
+<div class="ownership-map">
+  <div class="own-box"><b>API</b><span>base URL, session, codecs, global query, interceptors</span></div>
+  <div class="own-arrow">→</div>
+  <div class="own-box"><b>Requestable</b><span>path, method, headers, parameters</span></div>
+  <div class="own-arrow">→</div>
+  <div class="own-box"><b>Response</b><span>the exact Decodable result for that request</span></div>
+</div>
+
+<h3>Declare the shared API</h3>
+
+<pre><code class="swift">struct AppAPI: API {
+  let baseURL = URL(string: "https://api.example.com/v2/")!
+
+  func queryParameters() -> [URLQueryItem] {
+    [URLQueryItem(name: "api-version", value: "3")]
+  }
+
+  var jsonDecoder: JSONDecoder = {
+    let decoder = JSONDecoder()
+    decoder.dateDecodingStrategy = .iso8601
+    return decoder
+  }()
+}</code></pre>
+
+<p><code>API</code> also exposes the <code>URLSession</code>, encoder, and both interceptor arrays. Defaults keep the small case small: <code>.shared</code>, ordinary JSON codecs, no global query items, and no interceptors.</p>
+
+<h3>Put the endpoint contract in one type</h3>
+
+<pre><code class="swift">struct SearchArticles: Requestable {
+  let query: String
+  let page: Int
+  let tags: [String]
+
+  var path: String { "articles/search" }
+
+  struct Response: Decodable {
+    let results: [Article]
+    let nextPage: Int?
+  }
+}</code></pre>
+
+<p><code>Requestable</code> itself conforms to <code>Encodable</code>. That is how Bifrost gets useful defaults without a parameter dictionary: a GET request’s stored properties become query items, while POST, PUT, and PATCH requests encode into the JSON body.</p>
+
+<div class="table-scroll" role="region" aria-label="Bifrost HTTP method defaults" tabindex="0">
+<table>
+  <thead><tr><th>Method</th><th>Default parameters</th><th>Typical override</th></tr></thead>
+  <tbody>
+    <tr><td><code>GET</code></td><td>All encoded properties become query items.</td><td>Override <code>queryParameters()</code> for names or formatting.</td></tr>
+    <tr><td><code>POST</code></td><td>The complete request value becomes a JSON body.</td><td>Override <code>bodyParameters(_:)</code> for an envelope.</td></tr>
+    <tr><td><code>PUT</code> / <code>PATCH</code></td><td>The complete request value becomes a JSON body.</td><td>Add query items explicitly when an endpoint needs both.</td></tr>
+    <tr><td><code>DELETE</code></td><td>No automatic query or body parameters.</td><td>Override the appropriate function when required.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="encoding"><span class="kicker">Part 3</span>From Swift value to wire request</h2>
+
+<p>The same request model can be useful for several methods, but its default wire representation changes with the method. Pick one below to see what Bifrost builds from <code>SearchArticles(query: "swift", page: 2, tags: ["ios", "api"])</code>.</p>
+
+<div class="widget">
+  <div class="widget-title">Interactive — request construction</div>
+  <div class="widget-body">
+    <div class="method-row" id="method-row">
+      <button class="method-btn on" data-method="GET">GET</button>
+      <button class="method-btn" data-method="POST">POST</button>
+      <button class="method-btn" data-method="PATCH">PATCH</button>
+      <button class="method-btn" data-method="DELETE">DELETE</button>
+    </div>
+    <div class="request-card">
+      <div class="request-top"><b id="wire-method">GET</b> <span id="wire-url"></span></div>
+      <div class="wire-grid">
+        <div class="wire-label">Headers</div><div class="wire-value" id="wire-headers"></div>
+        <div class="wire-label">Body</div><div class="wire-value" id="wire-body"></div>
+      </div>
+    </div>
+    <div class="lab-note" id="wire-note"></div>
+  </div>
+</div>
+
+<p>The build order matters. Bifrost appends the request path to <code>baseURL</code>, then combines query items already in that URL with API-wide items and request-local items. It creates the <code>URLRequest</code>, sets the method, body, and request headers, and only then hands the final value to request interceptors.</p>
+
+<div class="callout warn">
+<strong>Content type is explicit.</strong> Encoding a JSON body does not automatically add <code>Content-Type: application/json</code>. Put it in the request’s <code>headerFields</code> or, more commonly, in an API-wide request interceptor.
+</div>
+
+<!-- ============================================================ -->
+<h2 id="pipeline"><span class="kicker">Part 4</span>The complete response pipeline</h2>
+
+<p><code>response(for:)</code> is compact at the call site because the work is a strict pipeline. Step through it to see where each extension point sits.</p>
+
+<div class="widget">
+  <div class="widget-title">Interactive — across the Bifrost</div>
+  <div class="widget-body">
+    <div class="btn-row">
+      <button class="ctl primary" id="pipeline-step">▶ Step through</button>
+      <button class="ctl" id="pipeline-reset">Reset</button>
+    </div>
+    <div class="bridge" id="pipeline-stages"></div>
+    <div class="bridge-detail" id="pipeline-detail">Select a stage or press <b>Step through</b> to follow one typed request from value to decoded response.</div>
+  </div>
+</div>
+
+<p>There are two important boundaries. Request interceptors see the fully built <code>URLRequest</code>, not a half-resolved model. Response interceptors see raw bytes plus <code>HTTPURLResponse</code>, before Bifrost decides whether the status is acceptable or decodes JSON.</p>
+
+<div class="table-scroll" role="region" aria-label="Interceptor results" tabindex="0">
+<table>
+  <thead><tr><th>Result</th><th>Request phase</th><th>Response phase</th></tr></thead>
+  <tbody>
+    <tr><td><code>.continue</code></td><td>Run the next interceptor, then transport.</td><td>Run the next interceptor, then validate and decode.</td></tr>
+    <tr><td><code>.return(response)</code></td><td>Skip remaining request interceptors and transport; enter the response phase.</td><td>Skip remaining response interceptors; validate and decode this response.</td></tr>
+    <tr><td><code>.restart</code></td><td colspan="2">Rebuild the original request and rerun the full request/response pipeline.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="request-interceptors"><span class="kicker">Part 5</span>Request interception: mutate or mock</h2>
+
+<p>A request interceptor receives an <code>InterceptionContext&lt;Request&gt;</code>. The original typed request is read-only context; the built <code>URLRequest</code> is mutable and authoritative.</p>
+
+<pre><code class="swift">struct AddAuthorization: RequestInterceptor {
+  let token: String
+
+  func intercept&lt;Request&gt;(
+    _ context: inout InterceptionContext&lt;Request&gt;
+  ) async throws -> InterceptionResult&lt;InterceptedResponse&gt;
+    where Request: Requestable {
+    context.urlRequest.setValue(
+      "Bearer \(token)",
+      forHTTPHeaderField: "Authorization"
+    )
+    return .continue
+  }
+}</code></pre>
+
+<p>Because the generic context still exposes the concrete request at runtime, middleware can scope itself to a marker protocol or request type. An auth interceptor can ignore public endpoints; a mock can recognize exactly one request without matching URL strings.</p>
+
+<pre><code class="swift">struct MockProfile: RequestInterceptor {
+  func intercept&lt;Request&gt;(
+    _ context: inout InterceptionContext&lt;Request&gt;
+  ) async throws -> InterceptionResult&lt;InterceptedResponse&gt;
+    where Request: Requestable {
+    guard context.request is GetProfile else { return .continue }
+
+    let response = HTTPURLResponse(
+      url: context.urlRequest.url!, statusCode: 200,
+      httpVersion: nil, headerFields: ["X-Mocked": "true"]
+    )!
+
+    return .return(InterceptedResponse(
+      body: Data(#"{"name":"Mocked User"}"#.utf8),
+      httpResponse: response
+    ))
+  }
+}</code></pre>
+
+<p>The mocked response does not jump directly to decoding. It enters the normal response-interceptor phase, so analytics, normalization, and validation behave the same for real and synthetic transport.</p>
+
+<!-- ============================================================ -->
+<h2 id="response-interceptors"><span class="kicker">Part 6</span>Response interception before decoding</h2>
+
+<p><code>InterceptedResponse</code> keeps the raw <code>Data</code> and mutable <code>HTTPURLResponse</code> together. Convenience properties expose <code>statusCode</code> and normalized string headers. That gives response policy enough context to inspect, rewrite, replace, or restart.</p>
+
+<pre><code class="swift">struct NormalizeAccepted: ResponseInterceptor {
+  func intercept(
+    _ response: inout InterceptedResponse
+  ) async throws -> InterceptionResult&lt;InterceptedResponse&gt; {
+    guard response.statusCode == 202 else { return .continue }
+
+    response.httpResponse = HTTPURLResponse(
+      url: response.httpResponse.url!,
+      statusCode: 200,
+      httpVersion: nil,
+      headerFields: response.headerFields
+    )!
+    return .continue
+  }
+}</code></pre>
+
+<p>Status validation happens <em>after</em> every response interceptor. That ordering is the key to recovery: a 401 is data the response phase can act on, not an error thrown too early. If no interceptor repairs it, Bifrost throws <code>BifrostError.unsuccessfulStatusCode</code> before decoding.</p>
+
+<div class="callout">
+<strong>One response shape for both paths.</strong> Network and mocked responses both become <code>InterceptedResponse</code>. Response middleware does not need to know whether bytes came from <code>URLSession</code> or a request interceptor.
+</div>
+
+<!-- ============================================================ -->
+<h2 id="restart"><span class="kicker">Part 7</span>Refresh a 401 and replay the original request</h2>
+
+<p>The most interesting use of <code>.restart</code> is authentication recovery. The response interceptor can make a nested refresh request, update the token store, and restart. Bifrost rebuilds the original request, which lets the request interceptor inject the fresh token on the second attempt.</p>
+
+<pre><code class="swift">struct RefreshOnUnauthorized: ResponseInterceptor {
+  let auth: AuthState
+
+  func intercept(
+    _ response: inout InterceptedResponse
+  ) async throws -> InterceptionResult&lt;InterceptedResponse&gt; {
+    guard response.statusCode == 401 else { return .continue }
+
+    let refreshed = try await auth.api.response(for: RefreshToken())
+    auth.token = refreshed.token
+    return .restart
+  }
+}</code></pre>
+
+<div class="widget">
+  <div class="widget-title">Interactive — 401 refresh and restart</div>
+  <div class="widget-body">
+    <div class="btn-row">
+      <button class="ctl primary" id="auth-step">▶ Step</button>
+      <button class="ctl" id="auth-run">Run all</button>
+      <button class="ctl" id="auth-reset">Reset</button>
+    </div>
+    <div class="auth-status">
+      <span class="auth-pill">Token <b id="auth-token">stale-token</b></span>
+      <span class="auth-pill">Protected requests <b id="auth-count">0</b></span>
+      <span class="auth-pill">Refresh requests <b id="refresh-count">0</b></span>
+    </div>
+    <div class="auth-path" id="auth-path"><div class="auth-empty">Step through the flow to watch the original request cross the bridge twice.</div></div>
+  </div>
+</div>
+
+<p>The source test for this flow observes three transports: protected with the stale token, refresh without an authorization header, then protected with the fresh token. The final response can still pass through later response interceptors before decoding.</p>
+
+<div class="callout warn">
+<strong>Restart needs a stop condition.</strong> Bifrost’s pipeline uses an open <code>while true</code> loop and does not impose a retry limit. A response interceptor must update state or track attempts so a persistent 401 cannot restart forever.
+</div>
+
+<!-- ============================================================ -->
+<h2 id="edges"><span class="kicker">Part 8</span>Errors, cancellation, logging, and sharp edges</h2>
+
+<h3>Cancellation stays native</h3>
+
+<p>Bifrost uses <code>URLSession.data(for:)</code> and checks <code>Task.checkCancellation()</code> immediately before and after transport. Interceptor errors and decoding errors propagate without wrapping, so callers can use ordinary structured-concurrency cancellation and targeted <code>catch</code> clauses.</p>
+
+<h3>Empty responses are explicit</h3>
+
+<pre><code class="swift">struct DeleteAccount: Requestable {
+  var method: HTTPMethod { .delete }
+  var path: String { "account" }
+  typealias Response = EmptyResponse
+}
+
+try await api.response(for: DeleteAccount())</code></pre>
+
+<p><code>EmptyResponse</code> is special-cased after status validation, so a successful empty body does not go through <code>JSONDecoder</code>.</p>
+
+<h3>Logging is deliberately small</h3>
+
+<p>Every real transport logs the HTTP method and URL through <code>OSLog</code>. Set <code>BifrostLogging.isDebugLoggingEnabled</code> on the main actor to include bodies, headers, status, and response headers. Request-interceptor mocks bypass transport, so they also bypass transport logging.</p>
+
+<div class="table-scroll" role="region" aria-label="Bifrost behavior to watch" tabindex="0">
+<table>
+  <thead><tr><th>Behavior</th><th>What the implementation does</th><th>What to decide in your app</th></tr></thead>
+  <tbody>
+    <tr><td>Successful status</td><td>Accepts <code>200..&lt;400</code>.</td><td>Decide whether 3xx bodies should really decode as success for your API.</td></tr>
+    <tr><td>JSON headers</td><td>Does not add a content type automatically.</td><td>Centralize <code>Content-Type</code> and <code>Accept</code> in an interceptor.</td></tr>
+    <tr><td>Restart</td><td>Has no built-in attempt limit.</td><td>Make restart conditions stateful and finite.</td></tr>
+    <tr><td>GET arrays</td><td>Produces repeated query names, one item per value.</td><td>Override encoding when the server expects comma-separated values.</td></tr>
+    <tr><td>Shared defaults</td><td>Uses <code>URLSession.shared</code> and ordinary JSON codecs.</td><td>Inject a configured session and date/key strategies where needed.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="verdict"><span class="kicker">Part 9</span>API reference &amp; verdict</h2>
+
+<details class="api">
+  <summary>API configuration — <code>API</code></summary>
+  <div class="api-body">
+    <pre><code class="swift">protocol API {
+  var baseURL: URL { get }
+  var urlSession: URLSession { get }
+  func queryParameters() -> [URLQueryItem]
+  var jsonEncoder: JSONEncoder { get }
+  var jsonDecoder: JSONDecoder { get }
+  var requestInterceptors: [any RequestInterceptor] { get }
+  var responseInterceptors: [any ResponseInterceptor] { get }
+}
+
+func response&lt;Request: Requestable&gt;(
+  for request: Request
+) async throws -> Request.Response</code></pre>
+  </div>
+</details>
+
+<details class="api">
+  <summary>Endpoint contract — <code>Requestable</code></summary>
+  <div class="api-body">
+    <pre><code class="swift">protocol Requestable: Encodable {
+  associatedtype Response: Decodable
+  var path: String { get }
+  var method: HTTPMethod { get }
+  var headerFields: [String: String] { get }
+  func queryParameters() throws -> [URLQueryItem]
+  func bodyParameters(_ encoder: JSONEncoder) throws -> Data?
+}
+
+enum HTTPMethod { case get, post, put, patch, delete }
+struct EmptyResponse: Decodable {}</code></pre>
+  </div>
+</details>
+
+<details class="api">
+  <summary>Interception — context, response, and outcomes</summary>
+  <div class="api-body">
+    <pre><code class="swift">enum InterceptionResult&lt;Value&gt; {
+  case `continue`
+  case `return`(Value)
+  case restart
+}
+
+struct InterceptionContext&lt;Request: Requestable&gt; {
+  let request: Request
+  var urlRequest: URLRequest
+}
+
+struct InterceptedResponse {
+  var body: Data
+  var httpResponse: HTTPURLResponse
+  var statusCode: Int { get }
+  var headerFields: [String: String] { get }
+}</code></pre>
+  </div>
+</details>
+
+<h3>Where it shines, where to be careful</h3>
+
+<div class="table-scroll" role="region" aria-label="Bifrost strengths and tradeoffs" tabindex="0">
+<table>
+  <thead><tr><th style="width:50%">👍 Shines</th><th>⚠️ Watch for</th></tr></thead>
+  <tbody>
+    <tr><td>Request and response types form one compile-time endpoint contract.</td><td>The whole request model is encoded by default; exclude local-only state with custom <code>Codable</code> or parameter overrides.</td></tr>
+    <tr><td>Small APIs stay small: conform two structs and call one async function.</td><td>Content headers and API-specific status policy remain explicit application decisions.</td></tr>
+    <tr><td>Typed request context makes auth, selective mocking, and middleware easier to scope.</td><td>A restart interceptor must guarantee eventual progress.</td></tr>
+    <tr><td>Raw response interception enables token refresh and normalization before errors or decoding.</td><td>The framework is intentionally REST/JSON-shaped rather than a general transport abstraction.</td></tr>
+    <tr><td>A custom <code>URLSession</code> plus request short-circuiting keeps tests deterministic.</td><td>Very large APIs still need naming and folder conventions around their many request types.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>At its core, Bifrost is less about hiding <code>URLSession</code> than about putting the endpoint contract in the right place. Once the request owns its inputs and response type, the API can focus on shared policy and interceptors can work at precise boundaries. The result is a networking layer that remains readable at the call site without giving up the hooks real applications eventually need.</p>
+
+<footer>
+  Written with the source, tests, and docs of <a href="https://github.com/mtzaquia/bifrost" target="_blank" rel="noopener">github.com/mtzaquia/bifrost</a> (<code>main</code>, version 3.0.4) open in the next window. The widgets model the framework’s actual build, interception, restart, validation, and decode order; the production implementation lives in the repository.
+</footer>
+
+</main>
+
+<script src="../assets/site.js"></script>
+<script>
+/* ---------------- request construction lab ---------------- */
+(function () {
+  const buttons = Array.from(document.querySelectorAll("[data-method]"));
+  const methodEl = document.getElementById("wire-method");
+  const urlEl = document.getElementById("wire-url");
+  const headersEl = document.getElementById("wire-headers");
+  const bodyEl = document.getElementById("wire-body");
+  const noteEl = document.getElementById("wire-note");
+  const base = "https://api.example.com/v2/articles/search";
+
+  function render(method) {
+    buttons.forEach(button => button.classList.toggle("on", button.dataset.method === method));
+    methodEl.textContent = method;
+
+    const isGet = method === "GET";
+    const hasBody = ["POST", "PATCH"].includes(method);
+    urlEl.textContent = isGet
+      ? base + "?api-version=3&query=swift&page=2&tags=ios&tags=api"
+      : base + "?api-version=3";
+    headersEl.textContent = "Accept: application/json\nContent-Type: <not added automatically>";
+    headersEl.classList.remove("empty");
+    bodyEl.textContent = hasBody
+      ? '{\n  "query": "swift",\n  "page": 2,\n  "tags": ["ios", "api"]\n}'
+      : "No automatic body";
+    bodyEl.classList.toggle("empty", !hasBody);
+
+    if (isGet) {
+      noteEl.innerHTML = "GET uses <code>DictionaryEncoder</code>; array values become repeated query items. The API-wide <code>api-version</code> item is appended first; request-item order is shown for readability and is not a contract.";
+    } else if (hasBody) {
+      noteEl.innerHTML = method + " skips automatic request query items and encodes the complete request as JSON. The API-wide query item remains.";
+    } else {
+      noteEl.innerHTML = "DELETE receives neither automatic query items nor a body. Override <code>queryParameters()</code> or <code>bodyParameters(_:)</code> when the endpoint requires one.";
+    }
+  }
+
+  buttons.forEach(button => button.addEventListener("click", () => render(button.dataset.method)));
+  render("GET");
+})();
+
+/* ---------------- pipeline explorer ---------------- */
+(function () {
+  const stages = [
+    { name: "Build URL", detail: "Bifrost appends <b>request.path</b> to <b>baseURL</b>, then combines existing, API-wide, and request-local query items." },
+    { name: "Build request", detail: "It sets the HTTP method, optional encoded body, and <b>Requestable.headerFields</b> on a concrete <code>URLRequest</code>." },
+    { name: "Request phase", detail: "Request interceptors run in array order with the typed request as context and the built URL request as mutable state.<br><span class='result-chip rc-continue'>.continue</span><span class='result-chip rc-return'>.return(mock)</span><span class='result-chip rc-restart'>.restart</span>" },
+    { name: "Transport", detail: "Unless short-circuited, <code>URLSession.data(for:)</code> runs. Bifrost checks task cancellation immediately before and after it." },
+    { name: "Response phase", detail: "Real and mocked responses now share <code>InterceptedResponse</code>. Interceptors can inspect or mutate bytes, status, and headers before validation.<br><span class='result-chip rc-continue'>.continue</span><span class='result-chip rc-return'>.return(replacement)</span><span class='result-chip rc-restart'>.restart</span>" },
+    { name: "Validate + decode", detail: "Bifrost accepts statuses in <b>200..&lt;400</b>, special-cases <code>EmptyResponse</code>, then decodes the exact <code>Request.Response</code> type." }
+  ];
+  const host = document.getElementById("pipeline-stages");
+  const detail = document.getElementById("pipeline-detail");
+  const stepButton = document.getElementById("pipeline-step");
+  let current = -1;
+
+  stages.forEach((stage, index) => {
+    const button = document.createElement("button");
+    button.className = "bridge-stage";
+    button.innerHTML = `<span class="bs-num">0${index + 1}</span><span class="bs-name">${stage.name}</span>`;
+    button.addEventListener("click", () => select(index));
+    host.appendChild(button);
+  });
+
+  function select(index) {
+    current = index;
+    Array.from(host.children).forEach((node, nodeIndex) => {
+      node.classList.toggle("active", nodeIndex === index);
+      node.classList.toggle("done", nodeIndex < index);
+    });
+    detail.innerHTML = `<b>${stages[index].name}.</b> ${stages[index].detail}`;
+    stepButton.textContent = index === stages.length - 1 ? "✓ Complete" : "▶ Next stage";
+  }
+
+  stepButton.addEventListener("click", () => select(current >= stages.length - 1 ? 0 : current + 1));
+  document.getElementById("pipeline-reset").addEventListener("click", () => {
+    current = -1;
+    Array.from(host.children).forEach(node => node.classList.remove("active", "done"));
+    detail.innerHTML = "Select a stage or press <b>Step through</b> to follow one typed request from value to decoded response.";
+    stepButton.textContent = "▶ Step through";
+  });
+})();
+
+/* ---------------- auth refresh simulator ---------------- */
+(function () {
+  const events = [
+    { who: "Build", text: "Build ProtectedRequest from the original value", meta: "attempt 1" },
+    { who: "Request", text: "Auth interceptor adds Bearer stale-token", meta: ".continue" },
+    { who: "Network", text: "Protected endpoint responds 401 Unauthorized", meta: "request #1", cls: "warn", protected: 1 },
+    { who: "Response", text: "Refresh interceptor sees 401 and calls RefreshToken", meta: "nested response(for:)" },
+    { who: "Network", text: "Refresh endpoint returns fresh-token", meta: "refresh #1", cls: "good", refresh: 1, fresh: true },
+    { who: "Response", text: "Token store updated; interceptor returns .restart", meta: "full replay", cls: "restart" },
+    { who: "Build", text: "Rebuild the original ProtectedRequest", meta: "attempt 2" },
+    { who: "Request", text: "Auth interceptor adds Bearer fresh-token", meta: ".continue" },
+    { who: "Network", text: "Protected endpoint responds 200 OK", meta: "request #2", cls: "good", protected: 1 },
+    { who: "Decode", text: "Validate status and decode ProtectedRequest.Response", meta: "success", cls: "good" }
+  ];
+  const path = document.getElementById("auth-path");
+  const token = document.getElementById("auth-token");
+  const protectedCount = document.getElementById("auth-count");
+  const refreshCount = document.getElementById("refresh-count");
+  const stepButton = document.getElementById("auth-step");
+  let index = 0;
+  let protectedRequests = 0;
+  let refreshRequests = 0;
+
+  function step() {
+    if (index >= events.length) return;
+    if (index === 0) path.innerHTML = "";
+    const event = events[index++];
+    protectedRequests += event.protected || 0;
+    refreshRequests += event.refresh || 0;
+    if (event.fresh) token.textContent = "fresh-token";
+    protectedCount.textContent = protectedRequests;
+    refreshCount.textContent = refreshRequests;
+
+    const row = document.createElement("div");
+    row.className = "auth-event " + (event.cls || "");
+    row.innerHTML = `<span class="who">${event.who}</span><span>${event.text}</span><span class="event-meta">${event.meta}</span>`;
+    path.appendChild(row);
+    stepButton.disabled = index >= events.length;
+    if (index >= events.length) stepButton.textContent = "✓ Decoded";
+  }
+
+  function reset() {
+    index = 0;
+    protectedRequests = 0;
+    refreshRequests = 0;
+    token.textContent = "stale-token";
+    protectedCount.textContent = "0";
+    refreshCount.textContent = "0";
+    path.innerHTML = '<div class="auth-empty">Step through the flow to watch the original request cross the bridge twice.</div>';
+    stepButton.disabled = false;
+    stepButton.textContent = "▶ Step";
+  }
+
+  stepButton.addEventListener("click", step);
+  document.getElementById("auth-run").addEventListener("click", () => { while (index < events.length) step(); });
+  document.getElementById("auth-reset").addEventListener("click", reset);
+})();
+</script>
+</body>
+</html>
