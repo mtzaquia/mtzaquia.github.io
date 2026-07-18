@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Matching — A Small PWA for Getting a Game Together</title>
+<link rel="stylesheet" href="../assets/blog.css">
+<style>
+  /* ---- post-specific styles: product, data-path, and mobile widgets ---- */
+  .metric-grid {
+    display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px;
+    margin: 22px 0;
+  }
+  .metric {
+    border: 1px solid var(--border); background: var(--surface); border-radius: 10px;
+    padding: 14px; min-width: 0;
+  }
+  .metric b { display: block; color: var(--accent); font-size: 1.55rem; line-height: 1.15; }
+  .metric span { display: block; color: var(--text-dim); font-size: 0.74rem; margin-top: 5px; }
+
+  .sim-status {
+    display: flex; align-items: center; justify-content: space-between; gap: 14px;
+    margin-bottom: 16px; padding: 14px; border: 1px solid var(--border);
+    border-radius: 10px; background: var(--surface-2);
+  }
+  .sim-status b { font-size: 1.1rem; }
+  .state-pill {
+    border: 1px solid var(--amber); color: var(--amber); border-radius: 999px;
+    padding: 3px 10px; font: 0.7rem "SF Mono", ui-monospace, monospace;
+  }
+  .state-pill.on { border-color: var(--green); color: var(--green); }
+  .state-pill.full { border-color: var(--accent-2); color: var(--accent-2); }
+  .lineup {
+    display: grid; grid-template-columns: repeat(6, minmax(54px, 1fr)); gap: 8px;
+    margin: 14px 0 18px;
+  }
+  .slot {
+    min-height: 64px; border: 1px dashed var(--border); border-radius: 9px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    color: var(--text-dim); font-size: 0.68rem;
+  }
+  .slot.filled { border-style: solid; border-color: var(--accent); color: var(--text); background: rgba(94,176,255,0.08); }
+  .slot.wait { border-color: var(--amber); color: var(--amber); background: rgba(240,180,88,0.08); }
+  .slot .avatar { font-size: 1.15rem; line-height: 1; margin-bottom: 5px; }
+  .sim-note { color: var(--text-dim); font-size: 0.82rem; min-height: 44px; }
+
+  .path-buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+  .path-btn {
+    border: 1px solid var(--border); background: var(--surface-2); color: var(--text-dim);
+    border-radius: 8px; padding: 7px 11px; cursor: pointer;
+    font: 0.72rem "SF Mono", ui-monospace, monospace;
+  }
+  .path-btn.on { border-color: var(--accent); color: var(--accent); background: rgba(94,176,255,0.08); }
+  .data-path { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; align-items: stretch; gap: 9px; }
+  .path-node {
+    border: 1px solid var(--border); background: var(--surface-2); border-radius: 10px;
+    padding: 13px; min-width: 0;
+  }
+  .path-node b { color: var(--accent); display: block; font-size: 0.8rem; margin-bottom: 5px; }
+  .path-node span { color: var(--text-dim); display: block; font-size: 0.72rem; overflow-wrap: anywhere; }
+  .path-arrow { align-self: center; color: var(--text-dim); }
+  .payload {
+    margin-top: 14px; padding: 11px 13px; border: 1px dashed var(--border);
+    border-radius: 9px; color: var(--text-dim); font-size: 0.8rem;
+  }
+  .payload code { color: var(--text); }
+
+  .phone-cutaway { display: grid; grid-template-columns: 210px 1fr; gap: 24px; align-items: center; }
+  .phone {
+    width: 190px; height: 364px; margin: 0 auto; border: 2px solid var(--border);
+    border-radius: 28px; background: #0a0d12; position: relative; overflow: hidden;
+  }
+  .phone-top { height: 42px; padding-top: 15px; text-align: center; border-bottom: 1px solid var(--border); color: var(--text-dim); font-size: 0.64rem; }
+  .phone-island { position: absolute; top: 8px; left: 62px; width: 66px; height: 17px; border-radius: 999px; background: #000; }
+  .phone-scroll { position: absolute; inset: 42px 0 60px; padding: 12px; overflow: hidden; }
+  .phone-card { height: 58px; margin-bottom: 9px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-2); }
+  .phone-fab { position: absolute; left: 18px; right: 18px; bottom: 72px; height: 36px; border-radius: 8px; background: linear-gradient(90deg, #26a69a, #3b82f6); }
+  .phone-tabs { position: absolute; bottom: 0; left: 0; right: 0; height: 60px; border-top: 1px solid var(--border); background: var(--surface); display: flex; align-items: flex-start; justify-content: space-around; padding-top: 9px; color: var(--text-dim); font-size: 0.62rem; }
+  .cutaway-list { display: flex; flex-direction: column; gap: 10px; }
+  .cutaway-item { border-left: 2px solid var(--accent); padding-left: 12px; }
+  .cutaway-item b { display: block; font-size: 0.86rem; }
+  .cutaway-item span { color: var(--text-dim); font-size: 0.77rem; }
+
+  .push-flow { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; align-items: stretch; }
+  .push-step { border: 1px solid var(--border); border-radius: 9px; background: var(--surface-2); padding: 11px; font-size: 0.72rem; text-align: center; }
+  .push-step b { display: block; color: var(--accent); margin-bottom: 4px; }
+  .push-step span { color: var(--text-dim); }
+
+  @media (max-width: 700px) {
+    .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .lineup { grid-template-columns: repeat(3, minmax(64px, 1fr)); }
+    .data-path { grid-template-columns: 1fr; }
+    .path-arrow { transform: rotate(90deg); text-align: center; }
+    .phone-cutaway { grid-template-columns: 1fr; }
+    .push-flow { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<nav class="site-nav">
+  <a class="brand" href="../index.html"><span class="dot">◆</span> mz — engineering notes</a>
+  <span class="nav-links"><a href="../index.html">All posts</a></span>
+</nav>
+
+<header class="hero">
+  <div class="plane">⚽️</div>
+  <h1>Matching: a small PWA for the messy part of getting a game together</h1>
+  <p class="sub">How a mobile-first web app turns “who is in?” into a confirmed line-up — with groups, waitlists, payments, team splits, efficient Supabase read paths, and web push.</p>
+  <div class="meta-row">
+    <span class="pill">Data collected • <b>July 18, 2026</b></span>
+    <span class="pill">Next.js <b>15</b> • React <b>19</b></span>
+    <span class="pill">Supabase • Vercel</span>
+    <span class="pill">PWA • Web Push</span>
+  </div>
+</header>
+
+<main>
+
+<nav class="toc">
+  <div class="toc-t">In this post</div>
+  <ol>
+    <li><a href="#problem">The problem is coordination, not scheduling</a></li>
+    <li><a href="#product">A match as a small state machine</a></li>
+    <li><a href="#usage">What real usage looks like</a></li>
+    <li><a href="#stack">The stack</a></li>
+    <li><a href="#data">Keeping Supabase traffic low</a></li>
+    <li><a href="#mobile">Making the PWA work well on phones</a></li>
+    <li><a href="#push">Web push notifications</a></li>
+    <li><a href="#lessons">Lessons from building it</a></li>
+  </ol>
+</nav>
+
+<h2 id="problem"><span class="kicker">Part 1</span>The problem is coordination, not scheduling</h2>
+
+<p class="lede">A recurring football, padel, or board-game group rarely struggles to put a date in a calendar. It struggles with the social state around that date: who is actually in, whether there are enough people, who dropped out, who can bring a +1, and whether everyone has paid.</p>
+
+<p>A group chat works for discussion, but not for keeping an accurate list. “I’m in” is buried under twenty messages. A late cancellation changes the line-up but not the old replies. The organiser ends up tracking everything, answering the same questions, and manually promoting someone from the waitlist.</p>
+
+<p><a href="https://www.matching-app.eu/" target="_blank" rel="noopener">Matching</a> keeps that information in one place. Organisers create groups and matches. Players join from a link, see the same line-up, land on a waitlist when the match is full, bring an invited +1 when allowed, and receive the changes that matter without reading the whole chat history.</p>
+
+<div class="callout">
+  Matching stays focused on the work between sending an invitation and having a dependable line-up. It is not trying to replace the group chat around the game.
+</div>
+
+<h2 id="product"><span class="kicker">Part 2</span>A match is a small state machine</h2>
+
+<p>A match is more than an event with a list of names. It has a minimum and maximum player count, a planned/confirmed/cancelled status, optional waitlisting, a notice period for leaving, an optional payment link, and an access rule: group-only or anyone with the link.</p>
+
+<p>Membership has state too. A player can be enrolled, waitlisted, or abandoned. The database trigger that handles capacity makes the transition atomic: the same join cannot be accepted by one screen and rejected by another. When a place opens, the shared state — not a stale chat message — remains authoritative.</p>
+
+<div class="widget">
+  <div class="widget-title">Interactive — coordination state</div>
+  <div class="widget-body">
+    <div class="sim-status">
+      <div><b id="sim-count">3 / 6 players</b><div class="dim">Minimum 4 • waitlist enabled</div></div>
+      <span class="state-pill" id="sim-state">PLANNED</span>
+    </div>
+    <div class="lineup" id="sim-lineup"></div>
+    <div class="btn-row">
+      <button class="ctl primary" id="sim-join">+ Join</button>
+      <button class="ctl" id="sim-leave">− Leave</button>
+      <button class="ctl" id="sim-reset">Reset</button>
+    </div>
+    <div class="sim-note" id="sim-note"></div>
+  </div>
+</div>
+
+<p>Once those states are in place, the organiser can confirm when the minimum is reached, share a line-up, split enrolled players into teams, attach a payment link, and transfer ownership. Players can add the match to their device calendar. Dates are stored with a match timezone, and interface and notification copy are localised in English, French, and Portuguese.</p>
+
+<h2 id="usage"><span class="kicker">Part 3</span>What real usage looks like</h2>
+
+<p>As of July 18, 2026, Matching is being used by real groups. Sign-ups give some context, but match participation says much more about whether the app is useful.</p>
+
+<div class="metric-grid">
+  <div class="metric"><b>285</b><span>registered users</span></div>
+  <div class="metric"><b>68</b><span>Supabase MAU • Jun 25–Jul 18</span></div>
+  <div class="metric"><b>80</b><span>matches created</span></div>
+  <div class="metric"><b>170</b><span>unique match participants</span></div>
+  <div class="metric"><b>67</b><span>unique participants in the last 30 days</span></div>
+  <div class="metric"><b>159</b><span>new player–match records in 30 days</span></div>
+  <div class="metric"><b>33 MB</b><span>Supabase egress • Jun 25–Jul 18</span></div>
+  <div class="metric"><b>58</b><span>confirmed matches</span></div>
+  <div class="metric"><b>176</b><span>Vercel visitors in the last 7 days</span></div>
+  <div class="metric"><b>447</b><span>page views in the last 7 days</span></div>
+  <div class="metric"><b>92%</b><span>of visitors on mobile</span></div>
+  <div class="metric"><b>70%</b><span>of visitors on iOS</span></div>
+</div>
+
+<p>Those 80 matches produced 1,046 player–match records across 170 distinct participants. Seventy-two belong to groups, which fits the recurring-crew use case, and 57 allowed link joining. Players used +1 invitations 21 times; organisers attached payment links to 31 matches, with 298 payment confirmations recorded. In the latest 30-day window, eight new matches produced 159 participation rows across 67 distinct players.</p>
+
+<p>In the week ending July 18, Vercel recorded 176 visitors and 447 page views. More than nine out of ten visitors were on a phone, mostly on iOS, and match pages were the most visited part of the app. That is a good reason to spend time on the mobile experience.</p>
+
+<div class="table-scroll" role="region" aria-label="Production usage snapshot" tabindex="0">
+  <table>
+    <thead><tr><th>Signal</th><th>Count</th><th>What it says</th></tr></thead>
+    <tbody>
+      <tr><td>Match outcomes</td><td>58 confirmed / 11 cancelled / 11 planned</td><td>Most matches reach a confirmed result.</td></tr>
+      <tr><td>Current participation states</td><td>863 enrolled / 37 waitlisted / 146 left</td><td>Waitlists and drop-outs are common enough to need proper handling.</td></tr>
+      <tr><td>Group memberships</td><td>249</td><td>Most matches are organised through a recurring group.</td></tr>
+      <tr><td>Push preferences</td><td>18 group / 16 confirmation</td><td>Subscriptions remain opt-in and event-specific.</td></tr>
+      <tr><td>Supabase activity</td><td>68 MAU / 33 MB egress</td><td>Measured from June 25 through July 18.</td></tr>
+      <tr><td>Vercel traffic</td><td>176 visitors / 447 views</td><td>Seven days ending July 18.</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="callout warn">
+  <strong>About the numbers.</strong> These are aggregate production rows queried on July 18, 2026. “Active” here means a player created a match-participation record during the previous 30 days; it is not an analytics session metric.
+</div>
+
+<h2 id="stack"><span class="kicker">Part 4</span>The stack</h2>
+
+<p>Matching is a Next.js App Router application written in TypeScript. React Server Components load the initial page, server actions handle mutations, and small client components handle browser features such as push subscription, touch interactions, dialogs, and navigation feedback.</p>
+
+<div class="table-scroll" role="region" aria-label="Matching technology stack" tabindex="0">
+  <table>
+    <thead><tr><th>Layer</th><th>Choice</th><th>Responsibility</th></tr></thead>
+    <tbody>
+      <tr><td>Application</td><td>Next.js 15, React 19, TypeScript</td><td>Server-rendered routes, metadata, route handlers, and server actions.</td></tr>
+      <tr><td>Interface</td><td>Tailwind CSS, shadcn/ui, Radix UI</td><td>Accessible primitives, compact forms, cards, tabs, dialogs, and mobile actions.</td></tr>
+      <tr><td>Backend</td><td>Supabase Auth + Postgres</td><td>Google sign-in, relational state, RLS, triggers, and database functions for page data.</td></tr>
+      <tr><td>Deployment</td><td>Vercel</td><td>Next.js runtime, notification route, and Web Analytics.</td></tr>
+      <tr><td>Device layer</td><td>Web App Manifest, service worker, Web Push + VAPID</td><td>Installation, standalone launch, notification display, and deep links.</td></tr>
+      <tr><td>Localisation</td><td>next-intl, date-fns, date-fns-tz</td><td>English/French/Portuguese copy and match-local dates.</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<p>There is no separate API server. Next.js handles the web routes and mutations, while Postgres handles joined reads and the rules that must still hold when several people join at once.</p>
+
+<h2 id="data"><span class="kicker">Part 5</span>Keeping Supabase traffic low</h2>
+
+<p>Supabase counts data leaving the database as egress. Broad nested selects and N+1 queries make pages slower and repeatedly send fields that the page never uses.</p>
+
+<p>Pages that load often use Postgres functions that return only what the page needs. <code>get_upcoming_matches</code> returns dates, status, group, venue, counts, and the current player’s status. <code>get_match_details</code> assembles the organiser, venue, group, and ordered enrolled/waitlisted/abandoned lists. Group details, profile metrics, transfer candidates, invitation previews, and public share metadata use the same approach.</p>
+
+<div class="widget">
+  <div class="widget-title">Interactive — what each page loads</div>
+  <div class="widget-body">
+    <div class="path-buttons" id="path-buttons"></div>
+    <div class="data-path">
+      <div class="path-node"><b>Next.js</b><span id="path-screen"></span></div>
+      <div class="path-arrow">→</div>
+      <div class="path-node"><b id="path-rpc"></b><span id="path-work"></span></div>
+      <div class="path-arrow">→</div>
+      <div class="path-node"><b>Response</b><span id="path-result"></span></div>
+    </div>
+    <div class="payload" id="path-note"></div>
+  </div>
+</div>
+
+<p>This cuts several round trips down to one. Group details went from separate group and player reads to one RPC. The original home screen fetched memberships, created groups, relevant matches, enrolled match IDs, and then another match set. It now calls dedicated functions for upcoming matches and creation permission.</p>
+
+<pre><code>const { data: matchDetails } = await supabase.rpc(
+  "get_match_details",
+  { match_id_input: matchId }
+)
+
+// Postgres returns the view model: creator, venue, group,
+// permissions, teams, and three ordered player collections.</code></pre>
+
+<p>Caching has a smaller job. React’s <code>cache()</code> memoises <code>getUser()</code> within a server render, so layout and page code do not validate the same session repeatedly. The public match teaser is also shared between metadata generation and page rendering. Match data itself is not kept in a long-lived cache, because the line-up should update immediately when somebody joins or leaves.</p>
+
+<p>Between June 25 and July 18, Supabase reported 33 MB of total egress and no cached egress. Matching does not use Supabase Storage, Realtime, or Edge Functions: static assets ship with the web app, and notification delivery runs through the Next.js route.</p>
+
+<p>Since Postgres statistics were reset on April 16, 2025, the three busiest screen RPCs have served 58,551 calls. Their average database execution times are approximately 13.2 ms for match detail, 8.2 ms for public metadata, and 6.9 ms for upcoming matches.</p>
+
+<div class="callout">
+  I use <code>cache()</code> to avoid repeated work during one render, RPCs to reduce round trips and response size, and a fresh read after a mutation. Each one solves a different problem.
+</div>
+
+<p>RPCs are not a permission shortcut. Authenticated functions use <code>auth.uid()</code> or <code>has_match_access(...)</code>, tables retain row-level security, and executable functions are granted only to the roles that need them. The public metadata function returns only the small amount of match information needed for a shared link.</p>
+
+<h2 id="mobile"><span class="kicker">Part 6</span>Making the PWA work well on phones</h2>
+
+<p>Matching is mainly used on phones, often while somebody is on the way to a venue. In the latest week, 92% of visitors were on mobile and seven in ten were on iOS. The PWA manifest launches <code>/dashboard</code> in standalone mode, with app icons, theme-aware chrome, and iOS launch images. The interface uses one controlled scroll region inside <code>100dvh</code>, which avoids competing page and panel scroll areas.</p>
+
+<div class="widget">
+  <div class="widget-title">Mobile cutaway — where the insets go</div>
+  <div class="widget-body phone-cutaway">
+    <div class="phone" aria-label="Simplified Matching mobile layout">
+      <div class="phone-island"></div>
+      <div class="phone-top">safe-area-inset-top</div>
+      <div class="phone-scroll"><div class="phone-card"></div><div class="phone-card"></div><div class="phone-card"></div></div>
+      <div class="phone-fab"></div>
+      <div class="phone-tabs"><span>Matches</span><span>Groups</span></div>
+    </div>
+    <div class="cutaway-list">
+      <div class="cutaway-item"><b><code>viewport-fit=cover</code></b><span>The app can use the whole display, including notched and rounded areas.</span></div>
+      <div class="cutaway-item"><b>Insets on all four sides</b><span>Header, tab bar, content, and landscape layouts respect <code>env(safe-area-inset-*)</code>.</span></div>
+      <div class="cutaway-item"><b>Floating action above the tab bar</b><span>Its bottom offset includes tab height, spacing, and the device’s bottom inset.</span></div>
+      <div class="cutaway-item"><b>One native-feeling scroller</b><span>Contained overscroll, pull to refresh, immediate navigation feedback, and optional haptics keep the shell coherent.</span></div>
+    </div>
+  </div>
+</div>
+
+<p>The layout accounts for safe areas from the start. A reusable wrapper applies top, bottom, left, and right insets. The sticky tab bar includes the bottom inset, floating actions sit above the tab bar and home indicator, and horizontal insets keep content clear of rounded corners in landscape.</p>
+
+<h2 id="push"><span class="kicker">Part 7</span>Web push notifications</h2>
+
+<p>Keeping the line-up accurate is only half the job; people also need to hear when something changes. Matching uses database triggers to call a Next.js notification route when a group match is created, a match is confirmed or cancelled, the time changes, the minimum or maximum is reached, a payment link appears, a player leaves, or ownership transfers.</p>
+
+<div class="push-flow" aria-label="Web push notification flow">
+  <div class="push-step"><b>Postgres</b><span>trigger sees a meaningful transition</span></div>
+  <div class="push-step"><b>Vercel route</b><span>loads eligible recipients and preferences</span></div>
+  <div class="push-step"><b>Localise</b><span>formats copy and time in the saved language</span></div>
+  <div class="push-step"><b>Web Push</b><span>sends with VAPID credentials</span></div>
+  <div class="push-step"><b>Service worker</b><span>displays and deep-links to the match</span></div>
+</div>
+
+<p>Recipients opt into group-match and confirmed-match categories separately. The settings screen detects service-worker and PushManager support, exposes a test notification, and can revoke the browser and database subscription together. Translation functions are preloaded once per language for a notification batch, and deliveries run concurrently.</p>
+
+<p>Matching does not ask for notification permission on the landing page. After someone joins a match, a one-time prompt explains that notifications are used for confirmations and changes. Asking at that point gives people some context for the browser permission.</p>
+
+<h2 id="lessons"><span class="kicker">Part 8</span>Lessons from building it</h2>
+
+<div class="table-scroll" role="region" aria-label="Matching engineering lessons" tabindex="0">
+  <table>
+    <thead><tr><th style="width:50%">Keep</th><th>Watch</th></tr></thead>
+    <tbody>
+      <tr><td>Keep capacity, waitlisting, and permission checks in Postgres so concurrent joins follow the same rules.</td><td>Database functions need the same versioning and security review as web routes.</td></tr>
+      <tr><td>Use RPCs for pages that otherwise need several queries or return too many fields.</td><td>Simple CRUD is still clearer through the Supabase client.</td></tr>
+      <tr><td>Memoise repeated server work within a render.</td><td>Do not cache mutable match data unless invalidation is immediate and reliable.</td></tr>
+      <tr><td>Account for safe areas, one-handed actions, and standalone launch from the beginning.</td><td>Installation and push support vary between browsers and operating systems.</td></tr>
+      <tr><td>Let users choose which notifications they receive.</td><td>Opening a notification should always load the latest match data.</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<p>The stack is familiar on purpose. Most of the work went into keeping the line-up accurate, making the common actions quick on a phone, and notifying people only when something important changes.</p>
+
+<footer>
+  Written from the production source, aggregate production data, and Supabase/Vercel usage dashboards of <a href="https://www.matching-app.eu/" target="_blank" rel="noopener">Matching</a>. Product counts were queried on July 18, 2026; Postgres call statistics cover the period since their April 16, 2025 reset. No personal user data was extracted for this post.
+</footer>
+
+</main>
+
+<script src="../assets/site.js"></script>
+<script>
+/* ---------------- coordination state simulator ---------------- */
+(function () {
+  const lineup = document.getElementById("sim-lineup");
+  const count = document.getElementById("sim-count");
+  const state = document.getElementById("sim-state");
+  const note = document.getElementById("sim-note");
+  const join = document.getElementById("sim-join");
+  const leave = document.getElementById("sim-leave");
+  const reset = document.getElementById("sim-reset");
+  const min = 4, max = 6;
+  let enrolled = 3, waitlisted = 0;
+
+  function render(message) {
+    lineup.innerHTML = "";
+    for (let i = 0; i < max; i++) {
+      const slot = document.createElement("div");
+      slot.className = "slot" + (i < enrolled ? " filled" : "");
+      slot.innerHTML = i < enrolled
+        ? '<span class="avatar">●</span><span>Player ' + (i + 1) + '</span>'
+        : '<span>Open</span>';
+      lineup.appendChild(slot);
+    }
+    if (waitlisted) {
+      const slot = document.createElement("div");
+      slot.className = "slot wait";
+      slot.innerHTML = '<span class="avatar">◷</span><span>Waitlist ' + waitlisted + '</span>';
+      lineup.appendChild(slot);
+    }
+    count.textContent = enrolled + " / " + max + " players";
+    state.className = "state-pill" + (enrolled >= max ? " full" : enrolled >= min ? " on" : "");
+    state.textContent = enrolled >= max ? "FULL" : enrolled >= min ? "MINIMUM REACHED" : "PLANNED";
+    note.textContent = message || (enrolled < min
+      ? "The organiser is still waiting for the minimum."
+      : enrolled < max
+        ? "There are enough players; the organiser can confirm the match."
+        : "Capacity is full. The next join is placed on the waitlist.");
+    leave.disabled = enrolled === 0;
+  }
+
+  join.addEventListener("click", function () {
+    if (enrolled < max) {
+      enrolled += 1;
+      render(enrolled === min ? "The minimum was reached — this is a meaningful notification event." : "The shared line-up changed atomically.");
+    } else {
+      waitlisted += 1;
+      render("The match is full, so the database assigns the next player to the waitlist.");
+    }
+  });
+  leave.addEventListener("click", function () {
+    enrolled -= 1;
+    if (waitlisted > 0) {
+      waitlisted -= 1;
+      enrolled += 1;
+      render("A place opened and one waiting player moved into the line-up.");
+    } else {
+      render("Leaving updates the line-up even if the chat still says otherwise.");
+    }
+  });
+  reset.addEventListener("click", function () { enrolled = 3; waitlisted = 0; render(); });
+  render();
+})();
+
+/* ---------------- data-path explorer ---------------- */
+(function () {
+  const paths = [
+    {
+      name: "Dashboard",
+      screen: "Upcoming match cards",
+      rpc: "get_upcoming_matches",
+      work: "access, counts, group, venue, player status",
+      result: "one compact row per visible match",
+      note: "The database filters inaccessible and past matches, counts enrolled/waitlisted players, and projects only card fields."
+    },
+    {
+      name: "Match",
+      screen: "Match detail",
+      rpc: "get_match_details",
+      work: "permissions, teams, ordered player states",
+      result: "one complete match view model",
+      note: "A single RPC replaces client-side joins across matches, players, groups, venues, memberships, and team assignments."
+    },
+    {
+      name: "Group",
+      screen: "Group roster",
+      rpc: "get_group_details",
+      work: "membership check, creator, ordered members",
+      result: "group + roster JSON",
+      note: "The function checks auth.uid() membership before returning the creator and member projection."
+    },
+    {
+      name: "Shared link",
+      screen: "Public invitation teaser",
+      rpc: "get_match_metadata",
+      work: "status, date, timezone, public flags",
+      result: "limited metadata only",
+      note: "The public route can build social metadata and a teaser without exposing the full line-up."
+    }
+  ];
+  const buttons = document.getElementById("path-buttons");
+  const screen = document.getElementById("path-screen");
+  const rpc = document.getElementById("path-rpc");
+  const work = document.getElementById("path-work");
+  const result = document.getElementById("path-result");
+  const note = document.getElementById("path-note");
+
+  function render(index) {
+    const path = paths[index];
+    Array.from(buttons.children).forEach((button, i) => button.classList.toggle("on", i === index));
+    screen.textContent = path.screen;
+    rpc.textContent = path.rpc;
+    work.textContent = path.work;
+    result.textContent = path.result;
+    note.textContent = path.note;
+  }
+
+  paths.forEach((path, index) => {
+    const button = document.createElement("button");
+    button.className = "path-btn";
+    button.textContent = path.name;
+    button.addEventListener("click", () => render(index));
+    buttons.appendChild(button);
+  });
+  render(0);
+})();
+</script>
+</body>
+</html>
