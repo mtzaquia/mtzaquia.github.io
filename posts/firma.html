@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Firma — SwiftUI Forms with Stable Identity</title>
+<link rel="stylesheet" href="../assets/blog.css">
+<style>
+  .architecture {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 22px 0;
+  }
+  .arch-card {
+    border: 1px solid var(--border); border-radius: 10px; background: var(--surface);
+    padding: 14px; min-width: 0;
+  }
+  .arch-card b { display: block; color: var(--accent); font-size: 0.82rem; margin-bottom: 5px; }
+  .arch-card span { color: var(--text-dim); font-size: 0.77rem; line-height: 1.45; }
+
+  .macro-flow {
+    display: grid; grid-template-columns: 1fr 40px 1fr; align-items: stretch; gap: 10px; margin: 20px 0;
+  }
+  .macro-box {
+    border: 1px solid var(--border); border-radius: 10px; background: var(--code-bg);
+    padding: 14px; min-width: 0;
+  }
+  .macro-box .cap {
+    color: var(--text-dim); font-size: 0.65rem; letter-spacing: 0.09em;
+    text-transform: uppercase; margin-bottom: 8px;
+  }
+  .macro-box code { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.72rem; }
+  .macro-arrow { display: flex; align-items: center; justify-content: center; color: var(--green); font-size: 1.35rem; }
+
+  .path-stack { display: flex; flex-direction: column; gap: 8px; margin: 18px 0; }
+  .path-row {
+    display: grid; grid-template-columns: 92px 1fr; gap: 12px; align-items: center;
+    border: 1px solid var(--border); border-radius: 9px; background: var(--surface); padding: 10px 13px;
+  }
+  .path-kind { color: var(--text-dim); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.08em; }
+  .path-row code { overflow-wrap: anywhere; white-space: normal; color: var(--accent); font-size: 0.77rem; }
+
+  .form-lab { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  .lab-fields { display: flex; flex-direction: column; gap: 11px; }
+  .lab-field label { display: block; color: var(--text-dim); font-size: 0.72rem; margin-bottom: 4px; }
+  .lab-field input {
+    width: 100%; border: 1px solid var(--border); border-radius: 8px; background: var(--code-bg);
+    color: var(--text); padding: 9px 11px; font: 0.82rem -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+  .lab-field input:focus { outline: 2px solid rgba(94,176,255,0.28); border-color: var(--accent); }
+  .lab-field.invalid input { border-color: var(--red); }
+  .field-error { min-height: 17px; margin-top: 4px; color: var(--red); font-size: 0.68rem; }
+  .validation-result {
+    border: 1px solid var(--border); border-radius: 10px; background: var(--code-bg); padding: 14px;
+    min-height: 192px; font: 0.72rem/1.65 "SF Mono", ui-monospace, monospace;
+  }
+  .result-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+  .result-state { color: var(--text-dim); }
+  .result-state.good { color: var(--green); }
+  .result-state.bad { color: var(--red); }
+  .result-line { color: var(--text-dim); overflow-wrap: anywhere; }
+  .result-line b { color: var(--text); }
+  .focus-chip {
+    display: inline-block; margin-top: 12px; border: 1px solid var(--accent); border-radius: 999px;
+    color: var(--accent); padding: 3px 9px; font-size: 0.66rem;
+  }
+
+  .focus-controls { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+  .focus-order { display: flex; flex-direction: column; gap: 8px; min-height: 174px; }
+  .focus-row {
+    display: grid; grid-template-columns: 28px 1fr auto; align-items: center; gap: 10px;
+    border: 1px solid var(--border); border-radius: 9px; background: var(--surface-2); padding: 9px 11px;
+    transition: border-color 0.2s, opacity 0.2s;
+  }
+  .focus-row.current { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(94,176,255,0.09); }
+  .focus-row.offscreen { opacity: 0.5; border-style: dashed; }
+  .focus-num { color: var(--text-dim); font: 0.65rem "SF Mono", ui-monospace, monospace; }
+  .focus-name { font: 0.76rem "SF Mono", ui-monospace, monospace; overflow-wrap: anywhere; }
+  .focus-badge { color: var(--text-dim); font-size: 0.65rem; }
+  .focus-note { min-height: 42px; color: var(--text-dim); font-size: 0.8rem; margin-top: 12px; }
+
+  .submission-flow {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 20px 0;
+  }
+  .submit-stage {
+    position: relative; border: 1px solid var(--border); border-radius: 9px; background: var(--surface);
+    padding: 12px 10px; text-align: center;
+  }
+  .submit-stage b { display: block; color: var(--accent); font-size: 0.76rem; margin-bottom: 4px; }
+  .submit-stage span { color: var(--text-dim); font-size: 0.7rem; }
+
+  @media (max-width: 680px) {
+    .architecture { grid-template-columns: 1fr; }
+    .macro-flow { grid-template-columns: 1fr; }
+    .macro-arrow { transform: rotate(90deg); min-height: 28px; }
+    .form-lab { grid-template-columns: 1fr; }
+    .submission-flow { grid-template-columns: 1fr 1fr; }
+  }
+  @media (max-width: 420px) {
+    .path-row { grid-template-columns: 1fr; gap: 3px; }
+    .submission-flow { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<nav class="site-nav">
+  <a class="brand" href="../index.html"><span class="dot">◆</span> mz — engineering notes</a>
+  <span class="nav-links"><a href="../index.html">All posts</a></span>
+</nav>
+
+<header class="hero">
+  <div class="plane">🖋️</div>
+  <h1>Firma: SwiftUI forms where validation and focus share one identity</h1>
+  <p class="sub">A source-level tour of <a href="https://github.com/mtzaquia/firma" target="_blank" rel="noopener">mtzaquia/firma</a> — a type-safe form layer that keeps model rules, nested paths, rendered controls, errors, and keyboard focus attached to the same field.</p>
+  <div class="meta-row">
+    <span class="pill">Source <b>main</b> • Version <b>2.0.0</b></span>
+    <span class="pill">Swift Package • <b>iOS 17+ / macOS 14+</b></span>
+    <span class="pill">Swift <b>6.2</b> • MainActor by default</span>
+    <span class="pill">Observation • Macros • SwiftUI</span>
+  </div>
+</header>
+
+<main>
+
+<nav class="toc">
+  <div class="toc-t">In this post</div>
+  <ol>
+    <li><a href="#problem">Why forms drift apart</a></li>
+    <li><a href="#model">Put editable state and rules in one model</a></li>
+    <li><a href="#macro">What <code>@FormObject</code> generates</a></li>
+    <li><a href="#identity">One path through nested and dynamic forms</a></li>
+    <li><a href="#dynamic-lists">Dynamic lists without index identity</a></li>
+    <li><a href="#rendering">A form engine that does not own the layout</a></li>
+    <li><a href="#validation">Fresh validation passes — interactive</a></li>
+    <li><a href="#focus">Focus that survives lazy content — interactive</a></li>
+    <li><a href="#submission">Submission, styling, and sharp edges</a></li>
+    <li><a href="#verdict">API reference &amp; verdict</a></li>
+  </ol>
+</nav>
+
+<h2 id="problem"><span class="kicker">Part 1</span>Why forms drift apart</h2>
+
+<p class="lede">A form looks like a collection of controls, but its difficult behavior lives in the relationships between them. The text field edits one value, validation writes an error somewhere else, a summary needs to find that error, and submission must scroll to a control that may not even be mounted yet.</p>
+
+<p>Those relationships become fragile when every layer invents its own identity. A model uses writable key paths. Validation uses dictionary keys. a <code>ForEach</code> uses element IDs. SwiftUI focus uses another hashable value. The accessibility layer uses strings. Everything works until a nested optional disappears, a list reorders, or the first invalid row sits outside a lazy container.</p>
+
+<div class="architecture">
+  <div class="arch-card"><b>Model identity</b><span>Which writable property owns the value and its validation rule?</span></div>
+  <div class="arch-card"><b>Rendered identity</b><span>Which mounted control represents that property right now?</span></div>
+  <div class="arch-card"><b>Navigation identity</b><span>Where should focus move when rows are nested, reordered, or off-screen?</span></div>
+</div>
+
+<p>Firma's design starts by making those the same question. The macro turns a model property into typed field metadata. A <code>FirmaPath</code> extends that metadata through scopes and identified collections. The builder then uses that path for bindings, errors, preferences, scrolling, and <code>FocusState</code>.</p>
+
+<div class="callout">
+  <strong>The central idea.</strong> Firma is less a library of styled controls than an identity layer for editable SwiftUI trees. The convenience controls are useful, but the shared path is what makes validation and focus compose.
+</div>
+
+<h2 id="model"><span class="kicker">Part 2</span>Put editable state and rules in one model</h2>
+
+<p>A Firma subject is an observable reference type. Writable properties hold the in-progress values; <code>validate()</code> describes the rules; <code>addError(_:for:)</code> points at a generated field using key-path syntax.</p>
+
+<pre><code class="swift">import Firma
+import Observation
+
+enum ProfileError: LocalizedError {
+  case missingName, invalidEmail
+
+  var errorDescription: String? {
+    switch self {
+    case .missingName: "Enter your name"
+    case .invalidEmail: "Enter a valid email address"
+    }
+  }
+}
+
+@Observable @FormObject
+final class ProfileForm {
+  var name = ""
+  var email = ""
+  var receivesUpdates = false
+
+  func validate() {
+    if name.isEmpty {
+      addError(ProfileError.missingName, for: \.name)
+    }
+    if !email.contains("@") {
+      addError(ProfileError.invalidEmail, for: \.email)
+    }
+  }
+}</code></pre>
+
+<p>This keeps rules close to the state they inspect without putting presentation into the model. The model does not decide whether an error appears below a text field, in a summary, or only after submission. It produces field-addressed errors; the builder and view decide how to present them.</p>
+
+<p>Firma's runtime API is main-actor isolated. That matches SwiftUI's editing and focus machinery, but it is an intentional boundary: a consuming target without main-actor default isolation should mark its form models <code>@MainActor</code>.</p>
+
+<h2 id="macro"><span class="kicker">Part 3</span>What <code>@FormObject</code> generates</h2>
+
+<p>The attached macro requires a class that also has <code>@Observable</code>. For each writable instance property it emits a field descriptor containing the property's label plus getter and setter closures. It also creates one validator per model instance and adds the <code>Firma</code> conformance.</p>
+
+<div class="macro-flow" aria-label="Firma macro expansion">
+  <div class="macro-box">
+    <div class="cap">Authored model</div>
+    <code>@Observable @FormObject
+final class ProfileForm {
+  var name = ""
+  var email = ""
+}</code>
+  </div>
+  <div class="macro-arrow">→</div>
+  <div class="macro-box">
+    <div class="cap">Conceptual expansion</div>
+    <code>struct Fields {
+  let name: FirmaField&lt;ProfileForm, String&gt;
+  let email: FirmaField&lt;ProfileForm, String&gt;
+}
+
+static var __fields: Fields
+let __validator = Validator()</code>
+  </div>
+</div>
+
+<p>The public-looking expression <code>\.name</code> is therefore not a writable key path into <code>ProfileForm</code>. Context makes it a key path into the generated <code>Fields</code> value, whose leaf is <code>FirmaField&lt;ProfileForm, String&gt;</code>. That indirection gives Firma both compile-time value types and runtime get/set behavior.</p>
+
+<p>The generator deliberately skips constants, static properties, getter-only computed properties, and unsupported binding patterns. Public fields need explicit type annotations because their generated metadata must also be public. Those diagnostics keep an incomplete expansion from turning into obscure errors elsewhere in the builder.</p>
+
+<h2 id="identity"><span class="kicker">Part 4</span>One path through nested and dynamic forms</h2>
+
+<p>A root field can be identified by its label, but composition needs more structure. <code>FirmaPath</code> stores a sequence of field components and actual <code>AnyHashable</code> element IDs. It never reduces an ID to <code>hashValue</code>, so unequal IDs cannot accidentally alias each other.</p>
+
+<div class="path-stack" aria-label="Example Firma paths">
+  <div class="path-row"><span class="path-kind">Root field</span><code>email</code></div>
+  <div class="path-row"><span class="path-kind">Nested field</span><code>primaryAddress.country.code</code></div>
+  <div class="path-row"><span class="path-kind">List field</span><code>attendees[attendee-42].name</code></div>
+</div>
+
+<p>That path grows when a builder scopes into another subject. Firma has three scope shapes:</p>
+
+<div class="table-scroll" role="region" aria-label="Firma scope behavior" tabindex="0">
+<table>
+  <thead><tr><th>Scope</th><th>Path behavior</th><th>Lifecycle behavior</th></tr></thead>
+  <tbody>
+    <tr><td>Nested model</td><td>Append the parent field.</td><td>Reuse the child's validation rules inside the root validator.</td></tr>
+    <tr><td>Optional model</td><td>Append the optional field when present.</td><td>Retain the last readable value during SwiftUI teardown, ignore stale writes, then remove descendant errors and focus registrations.</td></tr>
+    <tr><td>Identified collection</td><td>Append the list field and the element's real ID.</td><td>Return no builder for a stale or foreign ID; reconcile navigation when IDs reorder or disappear.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<pre><code class="swift">ForEach(event.attendees) { attendee in
+  if let row = form.scope(\.attendees, id: attendee.id) {
+    row.textField(for: \.name, label: "Attendee name")
+    row.stepper(for: \.ticketCount, range: 1...8)
+  }
+}</code></pre>
+
+<p>The element ID, not its current array index, stays in the path. Move the first attendee to the bottom and its value, error, and focus identity all move with it.</p>
+
+<h2 id="dynamic-lists"><span class="kicker">Part 5</span>Dynamic lists without index identity</h2>
+
+<p class="lede">An editable list is where ordinary form abstractions tend to reveal their seams. Rows can be inserted, deleted, and reordered while validation errors and keyboard focus are still active. If a field is identified by an array offset, moving one element can silently attach another element's error to it.</p>
+
+<p>Firma makes the collection relationship explicit. Each row is its own <code>@FormObject</code> model with a stable <code>Identifiable.ID</code>; the parent stores those models in <code>IdentifiedArrayOf</code>. Parent validation can attach an error to the collection itself, then compose every current row's rules in collection order.</p>
+
+<pre><code class="swift">import Firma
+import Foundation
+import Observation
+
+enum EventError: LocalizedError {
+  case attendeeNameRequired
+  case needsAttendee
+
+  var errorDescription: String? {
+    switch self {
+    case .attendeeNameRequired: "Enter an attendee name"
+    case .needsAttendee: "Add at least one attendee"
+    }
+  }
+}
+
+@Observable @FormObject
+final class AttendeeForm: Identifiable {
+  let id: UUID
+  var name = ""
+  var ticketCount = 1
+
+  init(id: UUID = UUID()) {
+    self.id = id
+  }
+
+  func validate() {
+    if name.isEmpty {
+      addError(EventError.attendeeNameRequired, for: \.name)
+    }
+  }
+}
+
+@Observable @FormObject
+final class EventForm {
+  var title = ""
+  var attendees: IdentifiedArrayOf&lt;AttendeeForm&gt; = []
+
+  func validate() {
+    if attendees.isEmpty {
+      addError(EventError.needsAttendee, for: \.attendees)
+    }
+    validate(\.attendees)
+  }
+}</code></pre>
+
+<p><code>validate(\.attendees)</code> is not implied by rendering the rows. It is an explicit composition choice in the parent model, just like validating a nested address. Firma walks the collection in its current order, evaluates each child's validator at <code>attendees[elementID]</code>, and merges the results into the root snapshot.</p>
+
+<h3>Render the current row, not a captured copy</h3>
+
+<p>The view iterates over the model for SwiftUI identity, then asks the root builder for the row currently stored under that ID. The scoped builder owns the complete path and live read/write access back into the collection.</p>
+
+<pre><code class="swift">ForEach(model.attendees) { attendee in
+  if let row = form.scope(\.attendees, id: attendee.id) {
+    row.textField(for: \.name, label: "Attendee name")
+    row.stepper(for: \.ticketCount, label: "Tickets", range: 1...8)
+
+    Button("Remove", role: .destructive) {
+      model.attendees.remove(id: attendee.id)
+    }
+  }
+}
+
+Button("Add attendee") {
+  model.attendees.append(AttendeeForm())
+}
+</code></pre>
+
+<p>The optional return from <code>scope(_:id:)</code> is important. SwiftUI may briefly evaluate an old row after its element has been removed. Firma checks the current collection before creating the builder, retains the last value only long enough for safe teardown, and ignores writes once the ID is gone. A stale view therefore cannot recreate a phantom element.</p>
+
+<div class="table-scroll" role="region" aria-label="Dynamic list mutation behavior" tabindex="0">
+<table>
+  <thead><tr><th>Mutation</th><th>What stays stable</th><th>What Firma updates</th></tr></thead>
+  <tbody>
+    <tr><td>Insert</td><td>Every existing row keeps the same element ID and descendant paths.</td><td>The new ID receives its own path; rendering and the next validation pass place it at its collection position.</td></tr>
+    <tr><td>Remove</td><td>Unrelated rows keep their bindings, errors, and focus identities.</td><td>Collection observation prunes focus/order state; the next validation pass replaces list descendants so removed-row errors disappear.</td></tr>
+    <tr><td>Reorder</td><td>Each row keeps its value and any error under <code>attendees[id]</code>.</td><td>Keyboard order follows the observed ID sequence; the next validation pass produces errors in that same order.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h3>Collection errors and row errors are different queries</h3>
+
+<p>The path <code>attendees</code> belongs to the collection field; <code>attendees[id].name</code> belongs to one row. That lets a screen present both levels without flattening them:</p>
+
+<pre><code class="swift">// Only an error attached directly to the list, such as "Add an attendee".
+let listError = form.error(for: \.attendees)
+
+// The list error plus every error produced by every current row.
+let allAttendeeErrors = form.errors(for: \.attendees)</code></pre>
+
+<div class="callout">
+  <strong>IDs are form identity.</strong> Use an ID that is unique and stable for the row's lifetime. An array index describes a temporary position; changing a model's ID after rendering changes its form identity. <code>IdentifiedArrayOf</code> makes uniqueness and ID-based mutation explicit at the storage boundary.
+</div>
+
+<p>The focus lab later in this post demonstrates the same rule from the keyboard's point of view: reorder an attendee and its field moves through the navigation sequence without losing which row it belongs to.</p>
+
+<h2 id="rendering"><span class="kicker">Part 6</span>A form engine that does not own the layout</h2>
+
+<p><code>FirmaContent</code> installs the validator and focus coordinator, then hands a <code>FirmaBuilder</code> to the content closure. It does not insert a <code>Form</code>, <code>List</code>, <code>ScrollView</code>, or grid. The application keeps complete control over hierarchy and styling.</p>
+
+<pre><code class="swift">FirmaContent(editing: $profile) { form in
+  ScrollView {
+    LazyVStack(alignment: .leading) {
+      form.textField(for: \.name, label: "Name")
+      form.textField(for: \.email, label: "Email")
+      form.toggle(for: \.receivesUpdates, label: "Updates")
+
+      form.submitButton("Save") {
+        save(profile)
+      }
+    }
+  }
+}</code></pre>
+
+<p>The built-in text field, toggle, and stepper wire a binding, error, stable ID, focus preference, and accessibility metadata together. A custom control can join the same system through <code>control(for:focusable:)</code>:</p>
+
+<pre><code class="swift">form.control(for: \.referralCode, focusable: true) { field in
+  VStack(alignment: .leading) {
+    TextField("Referral code", text: field.$value)
+      .focused(field.$focus, equals: field.id)
+
+    if let error = field.error {
+      Text(error.localizedDescription)
+    }
+  }
+}</code></pre>
+
+<p>Marking a custom control focusable is a contract: the view must attach the supplied focus binding and ID. Setting <code>focusable: false</code> still gives the control its binding and error without putting it into keyboard navigation.</p>
+
+<h2 id="validation"><span class="kicker">Part 7</span>Fresh validation passes</h2>
+
+<p>A validation pass resets stale state, runs the model's rules, merges nested results, and returns an immutable <code>ValidationResult</code>. Its error dictionary supports exact and descendant lookup; its ordered <code>errorPaths</code> preserves production order so submission can choose a deterministic first error.</p>
+
+<div class="widget">
+  <div class="widget-title">Interactive — run a Firma validation pass</div>
+  <div class="widget-body">
+    <div class="btn-row">
+      <button class="ctl primary" id="validate-run">Run validation</button>
+      <button class="ctl" id="validate-fill">Fill valid values</button>
+      <button class="ctl" id="validate-reset">Reset</button>
+    </div>
+    <div class="form-lab">
+      <div class="lab-fields">
+        <div class="lab-field" data-field="name">
+          <label for="lab-name">Full name</label>
+          <input id="lab-name" autocomplete="off" placeholder="Ada Lovelace">
+          <div class="field-error" aria-live="polite"></div>
+        </div>
+        <div class="lab-field" data-field="email">
+          <label for="lab-email">Email</label>
+          <input id="lab-email" autocomplete="off" placeholder="ada@example.com">
+          <div class="field-error" aria-live="polite"></div>
+        </div>
+        <div class="lab-field" data-field="referral">
+          <label for="lab-referral">Referral code (optional, at least 4 characters)</label>
+          <input id="lab-referral" autocomplete="off" placeholder="ANALYTICAL">
+          <div class="field-error" aria-live="polite"></div>
+        </div>
+      </div>
+      <div class="validation-result" id="validation-result" aria-live="polite">
+        <div class="result-head"><b>ValidationResult</b><span class="result-state">not run</span></div>
+        <div class="result-line">A pass starts by clearing the previous snapshot.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p>Try an invalid referral, validate, then remove it and validate again. The old referral error disappears because every root pass starts from an empty state. Scoped validation is more surgical: it replaces errors below that child path while preserving errors elsewhere in the form.</p>
+
+<div class="callout">
+  <strong>A snapshot, not live truth.</strong> <code>ValidationResult</code> does not change when the model changes. Call <code>validation()</code> or <code>runValidation()</code> for a new result. That makes submission decisions deterministic and prevents a previously returned value from changing under its consumer.
+</div>
+
+<h2 id="focus"><span class="kicker">Part 8</span>Focus that survives lazy content</h2>
+
+<p>Rendered controls report their frames through a preference key. Firma sorts those entries into visual order, then reconciles that mounted snapshot with a longer-lived focus order. The distinction matters: a lazy stack can unmount a row without removing it from the model or from keyboard navigation.</p>
+
+<p>Identified scopes separately observe collection order. Reordering rows rewrites the corresponding slices of the focus sequence by element ID; removing a row prunes its paths and any descendant list observations.</p>
+
+<div class="widget">
+  <div class="widget-title">Interactive — identified rows and keyboard order</div>
+  <div class="widget-body">
+    <div class="focus-controls">
+      <button class="ctl primary" id="focus-next">Next field</button>
+      <button class="ctl" id="focus-move">Move first row down</button>
+      <button class="ctl" id="focus-toggle">Mount off-screen row</button>
+      <button class="ctl" id="focus-remove">Remove focused row</button>
+      <button class="ctl" id="focus-reset">Reset</button>
+    </div>
+    <div class="focus-order" id="focus-order" aria-live="polite"></div>
+    <div class="focus-note" id="focus-note">The dashed row exists in the model and focus order but is currently outside the lazy container's mounted region.</div>
+  </div>
+</div>
+
+<p>When navigation targets an unmounted field, the coordinator stores a pending request, asks <code>ScrollViewReader</code> to reveal the candidate, and waits for the next mounted-field preference update before assigning <code>FocusState</code>. If a candidate disappears during that process, it moves on rather than focusing a stale path.</p>
+
+<p>The same mechanism powers invalid submission. Firma takes <code>errorPaths</code> in rule order, filters them through the known focus sequence, and requests the first focusable error. A date picker marked non-focusable can still have an error; it simply will not block the search for the next keyboard destination.</p>
+
+<h2 id="submission"><span class="kicker">Part 9</span>Submission, styling, and sharp edges</h2>
+
+<div class="submission-flow" aria-label="Firma submission flow">
+  <div class="submit-stage"><b>1 · Validate</b><span>Start a fresh pass for the current scope.</span></div>
+  <div class="submit-stage"><b>2 · Decide</b><span>Continue only when the snapshot is valid.</span></div>
+  <div class="submit-stage"><b>3 · Recover</b><span>Scroll to and focus the first usable error.</span></div>
+  <div class="submit-stage"><b>4 · Submit</b><span>Run the sync or MainActor async action.</span></div>
+</div>
+
+<p><code>submitButton</code> and <code>asyncSubmitButton</code> both use that flow. The asynchronous variant owns a task and prevents repeated taps from producing overlapping successful submissions. Validation itself remains synchronous and main-actor bound, which is appropriate for local form rules; server-side checks still belong in the submission action or in application state around it.</p>
+
+<p><code>FirmaStyle</code> is intentionally narrow. It configures the convenience controls' error and focused-label colors through the environment. It is not a theme engine, and <code>FirmaContent</code> does not impose spacing, sections, button styles, or navigation.</p>
+
+<div class="callout warn">
+  <strong>Reference semantics are part of the design.</strong> <code>@FormObject</code> supports classes, requires <code>@Observable</code>, and generates reference-writable field access. Value-type form models are outside this API. Dynamic lists use <code>IdentifiedArrayOf</code> so an element's stable ID, not an array offset, owns its descendant paths.
+</div>
+
+<p>The sample app is unusually valuable here because it tests behavior that unit tests cannot fully establish: custom focus, keyboard Previous/Next controls, lazy scrolling, optional teardown, identified reordering, synchronous submission, and cancellation-safe asynchronous submission.</p>
+
+<h2 id="verdict"><span class="kicker">Part 10</span>API reference &amp; verdict</h2>
+
+<details class="api">
+  <summary><code>@FormObject</code> and <code>Firma</code></summary>
+  <div class="api-body">
+    <p>Generate typed field metadata, one validator, and protocol conformance for an observable class. Implement <code>validate()</code>; use <code>addError(_:for:)</code> and <code>validate(_:)</code> for local and nested rules.</p>
+  </div>
+</details>
+
+<details class="api">
+  <summary><code>FirmaContent(editing:builder:)</code></summary>
+  <div class="api-body">
+    <p>Install the root validation and focus environment without choosing a visual container. The closure receives <code>FirmaBuilder&lt;F&gt;</code>.</p>
+  </div>
+</details>
+
+<details class="api">
+  <summary><code>FirmaBuilder</code> values and errors</summary>
+  <div class="api-body">
+    <p><code>binding(for:)</code> returns a native binding. <code>error(for:)</code> reads one exact path. <code>errors(for:)</code> returns every error at or below a field. <code>validation()</code> returns a snapshot; <code>validate()</code> returns its Boolean validity.</p>
+  </div>
+</details>
+
+<details class="api">
+  <summary>Scopes and controls</summary>
+  <div class="api-body">
+    <p><code>scope(_:)</code> enters nested or optional models; <code>scope(_:id:)</code> enters an identified row. Convenience APIs cover text fields, toggles, and steppers. <code>control(for:focusable:content:)</code> exposes value, error, path, and optional focus plumbing to any SwiftUI view.</p>
+  </div>
+</details>
+
+<details class="api">
+  <summary>Focus and submission</summary>
+  <div class="api-body">
+    <p><code>focus(on:)</code> requests a field and may complete after lazy content mounts. Submit buttons validate first, focus the first rendered error on failure, and run sync or async actions only on success.</p>
+  </div>
+</details>
+
+<p>Firma's strongest choice is refusing to treat validation, rendering, and focus as separate subsystems. A macro-generated field becomes a path; that path becomes a binding, an error address, a scroll target, and a place in the keyboard order. Nested models and identified collections extend the path rather than inventing new coordination.</p>
+
+<p>That makes the package especially useful for forms whose complexity is structural: optional sections, reusable child models, editable lists, custom controls, lazy containers, and error-first submission. Small forms still stay small. Large forms gain one consistent identity model instead of accumulating adapters between five almost-compatible ones.</p>
+
+<pre><code class="swift">dependencies: [
+  .package(
+    url: "https://github.com/mtzaquia/firma.git",
+    from: "2.0.0"
+  )
+]</code></pre>
+
+<footer>
+  Firma is available on <a href="https://github.com/mtzaquia/firma" target="_blank" rel="noopener">GitHub</a>. The repository includes focused guides for getting started, validation, rendering, scoping, and testing, plus a sample app covering the runtime edge cases discussed here.
+</footer>
+
+</main>
+
+<script src="../assets/site.js"></script>
+<script>
+/* ---------------- validation pass ---------------- */
+(function () {
+  const inputs = {
+    name: document.getElementById("lab-name"),
+    email: document.getElementById("lab-email"),
+    referral: document.getElementById("lab-referral")
+  };
+  const result = document.getElementById("validation-result");
+
+  function clearErrors() {
+    document.querySelectorAll(".lab-field").forEach(field => {
+      field.classList.remove("invalid");
+      field.querySelector(".field-error").textContent = "";
+    });
+  }
+
+  function validate() {
+    clearErrors();
+    const errors = [];
+    if (!inputs.name.value.trim()) errors.push(["name", "Full name is required"]);
+    if (!inputs.email.value.includes("@")) errors.push(["email", "Enter a valid email address"]);
+    if (inputs.referral.value && inputs.referral.value.length < 4) {
+      errors.push(["referral", "Referral codes contain at least four characters"]);
+    }
+
+    errors.forEach(([field, message]) => {
+      const host = document.querySelector(`[data-field="${field}"]`);
+      host.classList.add("invalid");
+      host.querySelector(".field-error").textContent = message;
+    });
+
+    const valid = errors.length === 0;
+    const lines = errors.length
+      ? errors.map(([field, message], index) =>
+          `<div class="result-line"><b>${index + 1}.</b> ${field} → ${message}</div>`).join("")
+      : '<div class="result-line"><b>errors:</b> [:]</div>';
+    const focus = errors.length
+      ? `<span class="focus-chip">focus → ${errors[0][0]}</span>`
+      : '<span class="focus-chip" style="border-color:var(--green);color:var(--green)">ready to submit</span>';
+
+    result.innerHTML =
+      `<div class="result-head"><b>ValidationResult</b><span class="result-state ${valid ? "good" : "bad"}">${valid ? "valid" : `${errors.length} error${errors.length === 1 ? "" : "s"}`}</span></div>` +
+      lines + focus;
+  }
+
+  document.getElementById("validate-run").addEventListener("click", validate);
+  document.getElementById("validate-fill").addEventListener("click", () => {
+    inputs.name.value = "Ada Lovelace";
+    inputs.email.value = "ada@example.com";
+    inputs.referral.value = "ANALYTICAL";
+    validate();
+  });
+  document.getElementById("validate-reset").addEventListener("click", () => {
+    Object.values(inputs).forEach(input => { input.value = ""; });
+    clearErrors();
+    result.innerHTML = '<div class="result-head"><b>ValidationResult</b><span class="result-state">not run</span></div><div class="result-line">A pass starts by clearing the previous snapshot.</div>';
+  });
+})();
+
+/* ---------------- focus order ---------------- */
+(function () {
+  const host = document.getElementById("focus-order");
+  const note = document.getElementById("focus-note");
+  let rows;
+  let focused;
+  let thirdMounted;
+
+  function reset() {
+    rows = [
+      { id: "attendee-1", name: "Ada", mounted: true },
+      { id: "attendee-2", name: "Grace", mounted: true },
+      { id: "attendee-3", name: "Linus", mounted: false }
+    ];
+    focused = "attendee-1";
+    thirdMounted = false;
+    note.textContent = "The dashed row exists in the model and focus order but is currently outside the lazy container's mounted region.";
+    render();
+  }
+
+  function render() {
+    host.innerHTML = "";
+    rows.forEach((row, index) => {
+      row.mounted = row.id !== "attendee-3" || thirdMounted;
+      const element = document.createElement("div");
+      element.className = "focus-row" + (row.id === focused ? " current" : "") + (row.mounted ? "" : " offscreen");
+      element.innerHTML =
+        `<span class="focus-num">0${index + 1}</span>` +
+        `<span class="focus-name">attendees[${row.id}].name · ${row.name}</span>` +
+        `<span class="focus-badge">${row.id === focused ? "focused" : row.mounted ? "mounted" : "off-screen"}</span>`;
+      host.appendChild(element);
+    });
+  }
+
+  document.getElementById("focus-next").addEventListener("click", () => {
+    if (!rows.length) return;
+    const current = rows.findIndex(row => row.id === focused);
+    const next = rows[(current + 1) % rows.length];
+    focused = next.id;
+    if (!next.mounted) {
+      thirdMounted = true;
+      note.innerHTML = `<b>${next.id}</b> was off-screen. Firma kept its path in focus order, requested a scroll, then assigned focus after it mounted.`;
+    } else {
+      note.innerHTML = `Moved through the reconciled visual order to <b>${next.id}</b>.`;
+    }
+    render();
+  });
+
+  document.getElementById("focus-move").addEventListener("click", () => {
+    if (rows.length < 2) return;
+    const first = rows.shift();
+    rows.splice(1, 0, first);
+    note.innerHTML = `<b>${first.id}</b> moved by stable ID. Its field path and current focus moved with the row.`;
+    render();
+  });
+
+  document.getElementById("focus-toggle").addEventListener("click", () => {
+    thirdMounted = !thirdMounted;
+    note.textContent = thirdMounted
+      ? "The lazy region now reports attendee-3 as mounted; the persistent order itself did not need to change."
+      : "attendee-3 unmounted again, but remains available to a future scroll-and-focus request.";
+    render();
+  });
+
+  document.getElementById("focus-remove").addEventListener("click", () => {
+    const index = rows.findIndex(row => row.id === focused);
+    if (index < 0) return;
+    const removed = rows[index];
+    rows.splice(index, 1);
+    focused = rows.length ? rows[Math.min(index, rows.length - 1)].id : null;
+    note.innerHTML = `<b>${removed.id}</b> was removed. Firma pruned its paths and continued from the nearest remaining field.`;
+    render();
+  });
+
+  document.getElementById("focus-reset").addEventListener("click", reset);
+  reset();
+})();
+</script>
+</body>
+</html>
