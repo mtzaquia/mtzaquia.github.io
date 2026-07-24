@@ -112,7 +112,7 @@
   <h1>Firma: SwiftUI forms where validation and focus share one identity</h1>
   <p class="sub">A source-level tour of <a href="https://github.com/mtzaquia/firma" target="_blank" rel="noopener">mtzaquia/firma</a> — a type-safe form layer that keeps model rules, nested paths, rendered controls, errors, and keyboard focus attached to the same field.</p>
   <div class="meta-row">
-    <span class="pill">Source <b>main</b> • Version <b>2.0.0</b></span>
+    <span class="pill">Release <b>2.0.0</b></span>
     <span class="pill">Swift Package • <b>iOS 17+ / macOS 14+</b></span>
     <span class="pill">Swift <b>6.2</b> • MainActor by default</span>
     <span class="pill">Observation • Macros • SwiftUI</span>
@@ -126,7 +126,7 @@
   <ol>
     <li><a href="#problem">Why forms drift apart</a></li>
     <li><a href="#model">Put editable state and rules in one model</a></li>
-    <li><a href="#macro">What <code>@FormObject</code> generates</a></li>
+    <li><a href="#macro">What <code>@FormModel</code> generates</a></li>
     <li><a href="#identity">One path through nested and dynamic forms</a></li>
     <li><a href="#dynamic-lists">Dynamic lists without index identity</a></li>
     <li><a href="#rendering">A form engine that does not own the layout</a></li>
@@ -157,7 +157,7 @@
 
 <h2 id="model"><span class="kicker">Part 2</span>Put editable state and rules in one model</h2>
 
-<p>A Firma subject is an observable reference type. Writable properties hold the in-progress values; <code>validate()</code> describes the rules; <code>addError(_:for:)</code> points at a generated field using key-path syntax.</p>
+<p>A Firma subject is an observable reference type. Writable properties hold the in-progress values; <code>validate(_:)</code> describes the rules; its <code>ValidationContext</code> attaches errors to generated fields using key-path syntax.</p>
 
 <pre><code class="swift">import Firma
 import Observation
@@ -173,18 +173,18 @@ enum ProfileError: LocalizedError {
   }
 }
 
-@Observable @FormObject
+@Observable @FormModel
 final class ProfileForm {
   var name = ""
   var email = ""
   var receivesUpdates = false
 
-  func validate() {
+  func validate(_ validation: ValidationContext&lt;ProfileForm&gt;) {
     if name.isEmpty {
-      addError(ProfileError.missingName, for: \.name)
+      validation.addError(ProfileError.missingName, for: \.name)
     }
     if !email.contains("@") {
-      addError(ProfileError.invalidEmail, for: \.email)
+      validation.addError(ProfileError.invalidEmail, for: \.email)
     }
   }
 }</code></pre>
@@ -193,14 +193,14 @@ final class ProfileForm {
 
 <p>Firma's runtime API is main-actor isolated. That matches SwiftUI's editing and focus machinery, but it is an intentional boundary: a consuming target without main-actor default isolation should mark its form models <code>@MainActor</code>.</p>
 
-<h2 id="macro"><span class="kicker">Part 3</span>What <code>@FormObject</code> generates</h2>
+<h2 id="macro"><span class="kicker">Part 3</span>What <code>@FormModel</code> generates</h2>
 
 <p>The attached macro requires a class that also has <code>@Observable</code>. For each writable instance property it emits a field descriptor containing the property's label plus getter and setter closures. It also creates one validator per model instance and adds the <code>Firma</code> conformance.</p>
 
 <div class="macro-flow" aria-label="Firma macro expansion">
   <div class="macro-box">
     <div class="cap">Authored model</div>
-    <code>@Observable @FormObject
+    <code>@Observable @FormModel
 final class ProfileForm {
   var name = ""
   var email = ""
@@ -259,7 +259,7 @@ let __validator = Validator()</code>
 
 <p class="lede">An editable list is where ordinary form abstractions tend to reveal their seams. Rows can be inserted, deleted, and reordered while validation errors and keyboard focus are still active. If a field is identified by an array offset, moving one element can silently attach another element's error to it.</p>
 
-<p>Firma makes the collection relationship explicit. Each row is its own <code>@FormObject</code> model with a stable <code>Identifiable.ID</code>; the parent stores those models in <code>IdentifiedArrayOf</code>. Parent validation can attach an error to the collection itself, then compose every current row's rules in collection order.</p>
+<p>Firma makes the collection relationship explicit. Each row is its own <code>@FormModel</code> model with a stable <code>Identifiable.ID</code>; the parent stores those models in <code>IdentifiedArrayOf</code>. Parent validation can attach an error to the collection itself, then compose every current row's rules in collection order.</p>
 
 <pre><code class="swift">import Firma
 import Foundation
@@ -277,7 +277,7 @@ enum EventError: LocalizedError {
   }
 }
 
-@Observable @FormObject
+@Observable @FormModel
 final class AttendeeForm: Identifiable {
   let id: UUID
   var name = ""
@@ -287,27 +287,27 @@ final class AttendeeForm: Identifiable {
     self.id = id
   }
 
-  func validate() {
+  func validate(_ validation: ValidationContext&lt;AttendeeForm&gt;) {
     if name.isEmpty {
-      addError(EventError.attendeeNameRequired, for: \.name)
+      validation.addError(EventError.attendeeNameRequired, for: \.name)
     }
   }
 }
 
-@Observable @FormObject
+@Observable @FormModel
 final class EventForm {
   var title = ""
   var attendees: IdentifiedArrayOf&lt;AttendeeForm&gt; = []
 
-  func validate() {
+  func validate(_ validation: ValidationContext&lt;EventForm&gt;) {
     if attendees.isEmpty {
-      addError(EventError.needsAttendee, for: \.attendees)
+      validation.addError(EventError.needsAttendee, for: \.attendees)
     }
-    validate(\.attendees)
+    validation.validate(\.attendees)
   }
 }</code></pre>
 
-<p><code>validate(\.attendees)</code> is not implied by rendering the rows. It is an explicit composition choice in the parent model, just like validating a nested address. Firma walks the collection in its current order, evaluates each child's validator at <code>attendees[elementID]</code>, and merges the results into the root snapshot.</p>
+<p><code>validation.validate(\.attendees)</code> is not implied by rendering the rows. It is an explicit composition choice in the parent model, just like validating a nested address. Firma walks the collection in its current order, evaluates each child's rules at <code>attendees[elementID]</code>, and merges the results into the root snapshot.</p>
 
 <h3>Render the current row, not a captured copy</h3>
 
@@ -381,7 +381,6 @@ let allAttendeeErrors = form.errors(for: \.attendees)</code></pre>
 <pre><code class="swift">form.control(for: \.referralCode, focusable: true) { field in
   VStack(alignment: .leading) {
     TextField("Referral code", text: field.$value)
-      .focused(field.$focus, equals: field.id)
 
     if let error = field.error {
       Text(error.localizedDescription)
@@ -389,7 +388,7 @@ let allAttendeeErrors = form.errors(for: \.attendees)</code></pre>
   }
 }</code></pre>
 
-<p>Marking a custom control focusable is a contract: the view must attach the supplied focus binding and ID. Setting <code>focusable: false</code> still gives the control its binding and error without putting it into keyboard navigation.</p>
+<p>Marking a custom control focusable is a contract that its returned content contains one focus destination. Firma attaches the shared focus binding, stable ID, and visual-order registration automatically. Setting <code>focusable: false</code> still gives the control its binding, error, ID, and <code>isFocused</code> state without putting it into keyboard navigation.</p>
 
 <h2 id="validation"><span class="kicker">Part 7</span>Fresh validation passes</h2>
 
@@ -432,12 +431,12 @@ let allAttendeeErrors = form.errors(for: \.attendees)</code></pre>
 <p>Try an invalid referral, validate, then remove it and validate again. The old referral error disappears because every root pass starts from an empty state. Scoped validation is more surgical: it replaces errors below that child path while preserving errors elsewhere in the form.</p>
 
 <div class="callout">
-  <strong>A snapshot, not live truth.</strong> <code>ValidationResult</code> does not change when the model changes. Call <code>validation()</code> or <code>runValidation()</code> for a new result. That makes submission decisions deterministic and prevents a previously returned value from changing under its consumer.
+  <strong>A snapshot, not live truth.</strong> <code>ValidationResult</code> does not change when the model changes. Call <code>validate()</code> on the model or builder for a new result. That makes submission decisions deterministic and prevents a previously returned value from changing under its consumer.
 </div>
 
 <h2 id="focus"><span class="kicker">Part 8</span>Focus that survives lazy content</h2>
 
-<p>Rendered controls report their frames through a preference key. Firma sorts those entries into visual order, then reconciles that mounted snapshot with a longer-lived focus order. The distinction matters: a lazy stack can unmount a row without removing it from the model or from keyboard navigation.</p>
+<p>Rendered focusable controls report their frames through a preference key. Firma sorts those entries into visual order, then reconciles that mounted snapshot with a longer-lived focus order. The distinction matters: a lazy stack can unmount a row without removing it from the model or from keyboard navigation.</p>
 
 <p>Identified scopes separately observe collection order. Reordering rows rewrites the corresponding slices of the focus sequence by element ID; removing a row prunes its paths and any descendant list observations.</p>
 
@@ -458,7 +457,7 @@ let allAttendeeErrors = form.errors(for: \.attendees)</code></pre>
 
 <p>When navigation targets an unmounted field, the coordinator stores a pending request, asks <code>ScrollViewReader</code> to reveal the candidate, and waits for the next mounted-field preference update before assigning <code>FocusState</code>. If a candidate disappears during that process, it moves on rather than focusing a stale path.</p>
 
-<p>The same mechanism powers invalid submission. Firma takes <code>errorPaths</code> in rule order, filters them through the known focus sequence, and requests the first focusable error. A date picker marked non-focusable can still have an error; it simply will not block the search for the next keyboard destination.</p>
+<p>The same mechanism powers invalid submission. Firma submits <code>errorPaths</code> as candidates in rule order. A destination that is lazy can mount after scrolling; a stale or non-focusable candidate is skipped when it fails to join the mounted focus sequence, so the request can advance to the next error.</p>
 
 <h2 id="submission"><span class="kicker">Part 9</span>Submission, styling, and sharp edges</h2>
 
@@ -471,10 +470,10 @@ let allAttendeeErrors = form.errors(for: \.attendees)</code></pre>
 
 <p><code>submitButton</code> and <code>asyncSubmitButton</code> both use that flow. The asynchronous variant owns a task and prevents repeated taps from producing overlapping successful submissions. Validation itself remains synchronous and main-actor bound, which is appropriate for local form rules; server-side checks still belong in the submission action or in application state around it.</p>
 
-<p><code>FirmaStyle</code> is intentionally narrow. It configures the convenience controls' error and focused-label colors through the environment. It is not a theme engine, and <code>FirmaContent</code> does not impose spacing, sections, button styles, or navigation.</p>
+<p><code>FirmaStyle</code> is intentionally narrow. It configures error, focused-label, and ordinary label colors plus optional text-field-label uppercasing through the environment. It is not a theme engine, and <code>FirmaContent</code> does not impose spacing, sections, button styles, or navigation.</p>
 
 <div class="callout warn">
-  <strong>Reference semantics are part of the design.</strong> <code>@FormObject</code> supports classes, requires <code>@Observable</code>, and generates reference-writable field access. Value-type form models are outside this API. Dynamic lists use <code>IdentifiedArrayOf</code> so an element's stable ID, not an array offset, owns its descendant paths.
+  <strong>Reference semantics are part of the design.</strong> <code>@FormModel</code> supports classes, requires <code>@Observable</code>, and generates reference-writable field access. Value-type form models are outside this API. Dynamic lists use <code>IdentifiedArrayOf</code> so an element's stable ID, not an array offset, owns its descendant paths.
 </div>
 
 <p>The sample app is unusually valuable here because it tests behavior that unit tests cannot fully establish: custom focus, keyboard Previous/Next controls, lazy scrolling, optional teardown, identified reordering, synchronous submission, and cancellation-safe asynchronous submission.</p>
@@ -482,9 +481,9 @@ let allAttendeeErrors = form.errors(for: \.attendees)</code></pre>
 <h2 id="verdict"><span class="kicker">Part 10</span>API reference &amp; verdict</h2>
 
 <details class="api">
-  <summary><code>@FormObject</code> and <code>Firma</code></summary>
+  <summary><code>@FormModel</code>, <code>Firma</code>, and <code>ValidationContext</code></summary>
   <div class="api-body">
-    <p>Generate typed field metadata, one validator, and protocol conformance for an observable class. Implement <code>validate()</code>; use <code>addError(_:for:)</code> and <code>validate(_:)</code> for local and nested rules.</p>
+    <p><code>@FormModel</code> generates typed field metadata, one validator per instance, and <code>Firma</code> conformance for an observable class. Implement <code>validate(_:)</code>; use the supplied context's <code>addError(_:for:)</code> and <code>validate(_:)</code> methods for local and nested rules. App code starts a pass with the separate zero-argument <code>validate()</code>.</p>
   </div>
 </details>
 
@@ -498,14 +497,14 @@ let allAttendeeErrors = form.errors(for: \.attendees)</code></pre>
 <details class="api">
   <summary><code>FirmaBuilder</code> values and errors</summary>
   <div class="api-body">
-    <p><code>binding(for:)</code> returns a native binding. <code>error(for:)</code> reads one exact path. <code>errors(for:)</code> returns every error at or below a field. <code>validation()</code> returns a snapshot; <code>validate()</code> returns its Boolean validity.</p>
+    <p><code>binding(for:)</code> returns a native binding. <code>error(for:)</code> reads one exact path. <code>errors(for:)</code> returns every error at or below a field. <code>validate()</code> starts a pass and returns an immutable <code>ValidationResult</code>; inspect <code>isValid</code>, <code>errors</code>, and ordered <code>errorPaths</code>.</p>
   </div>
 </details>
 
 <details class="api">
   <summary>Scopes and controls</summary>
   <div class="api-body">
-    <p><code>scope(_:)</code> enters nested or optional models; <code>scope(_:id:)</code> enters an identified row. Convenience APIs cover text fields, toggles, and steppers. <code>control(for:focusable:content:)</code> exposes value, error, path, and optional focus plumbing to any SwiftUI view.</p>
+    <p><code>scope(_:)</code> enters nested or optional models; <code>scope(_:id:)</code> enters an identified row. Convenience APIs cover text fields, toggles, and steppers. <code>control(for:focusable:content:)</code> exposes value, error, stable ID, and focus state to any SwiftUI view; Firma installs shared focus when requested.</p>
   </div>
 </details>
 
@@ -528,7 +527,7 @@ let allAttendeeErrors = form.errors(for: \.attendees)</code></pre>
 ]</code></pre>
 
 <footer>
-  Firma is available on <a href="https://github.com/mtzaquia/firma" target="_blank" rel="noopener">GitHub</a>. The repository includes focused guides for getting started, validation, rendering, scoping, and testing, plus a sample app covering the runtime edge cases discussed here.
+  Written from <a href="https://github.com/mtzaquia/firma" target="_blank" rel="noopener">mtzaquia/firma</a> release <code>2.0.0</code> on July 23, 2026, including the public source, package tests, macro tests, guides, and sample app. The interactive widgets are deterministic models derived from those sources, not the production SwiftUI implementation.
 </footer>
 
 </main>

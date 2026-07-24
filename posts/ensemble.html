@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ensemble — Keep the Data, Change the Phase</title>
+<link rel="stylesheet" href="../assets/blog.css">
+<style>
+  .ownership {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 22px 0;
+  }
+  .owner {
+    border: 1px solid var(--border); border-radius: 10px; background: var(--surface);
+    padding: 15px; min-width: 0;
+  }
+  .owner .owner-type {
+    display: block; color: var(--accent); font: 0.72rem "SF Mono", ui-monospace, monospace;
+    overflow-wrap: anywhere; margin-bottom: 6px;
+  }
+  .owner b { display: block; font-size: 0.92rem; margin-bottom: 5px; }
+  .owner span { color: var(--text-dim); font-size: 0.78rem; line-height: 1.5; }
+
+  .state-pair {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 20px 0;
+  }
+  .state-card {
+    border: 1px solid var(--border); border-radius: 10px; background: var(--code-bg);
+    padding: 15px; min-width: 0;
+  }
+  .state-card .cap {
+    color: var(--text-dim); font-size: 0.66rem; text-transform: uppercase;
+    letter-spacing: 0.1em; margin-bottom: 7px;
+  }
+  .state-card code { color: var(--accent); overflow-wrap: anywhere; white-space: normal; }
+  .state-card p { color: var(--text-dim); font-size: 0.76rem; margin: 7px 0 0; }
+
+  .policy-controls {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 18px;
+  }
+  .policy-control label {
+    display: block; color: var(--text-dim); font-size: 0.72rem; margin-bottom: 5px;
+  }
+  .policy-control select {
+    width: 100%; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--code-bg); color: var(--text); padding: 9px 10px;
+    font: 0.78rem "SF Mono", ui-monospace, monospace;
+  }
+  .policy-control select:focus { outline: 2px solid rgba(94,176,255,0.3); border-color: var(--accent); }
+  .policy-lab {
+    display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    gap: 14px; align-items: stretch;
+  }
+  .lab-panel {
+    border: 1px solid var(--border); border-radius: 10px; background: var(--code-bg);
+    padding: 15px; min-width: 0;
+  }
+  .lab-panel .cap {
+    color: var(--text-dim); font-size: 0.66rem; text-transform: uppercase;
+    letter-spacing: 0.1em; margin-bottom: 10px;
+  }
+  .internal-row {
+    display: grid; grid-template-columns: 76px 1fr; gap: 9px;
+    font: 0.73rem/1.6 "SF Mono", ui-monospace, monospace;
+  }
+  .internal-row span:first-child { color: var(--text-dim); }
+  .internal-row span:last-child { color: var(--text); overflow-wrap: anywhere; }
+  .rendered-card {
+    display: flex; flex-direction: column; justify-content: center; min-height: 132px;
+    border: 1px solid var(--border); border-radius: 9px; background: var(--surface);
+    padding: 15px; text-align: center;
+  }
+  .rendered-card.failure { border-color: var(--red); }
+  .rendered-card.placeholder { border-style: dashed; }
+  .rendered-card.hidden { opacity: 0.65; }
+  .rendered-title { font-weight: 650; overflow-wrap: anywhere; }
+  .rendered-source {
+    display: inline-block; align-self: center; margin-top: 9px; border: 1px solid var(--border);
+    border-radius: 999px; padding: 3px 9px; color: var(--text-dim);
+    font: 0.65rem "SF Mono", ui-monospace, monospace;
+  }
+  .rendered-source.live { color: var(--green); border-color: rgba(78,207,138,0.55); }
+  .rendered-source.cached { color: var(--amber); border-color: rgba(240,180,88,0.55); }
+  .rendered-source.placeholder { color: var(--accent); border-color: rgba(94,176,255,0.55); }
+  .lab-note { min-height: 46px; color: var(--text-dim); font-size: 0.79rem; margin: 13px 0 0; }
+
+  .reload-flow {
+    display: grid; grid-template-columns: 1fr 38px 1fr; gap: 10px; align-items: stretch;
+    margin: 22px 0;
+  }
+  .reload-side {
+    border: 1px solid var(--border); border-radius: 10px; background: var(--surface);
+    padding: 15px; min-width: 0;
+  }
+  .reload-side b { color: var(--accent); display: block; margin-bottom: 7px; }
+  .reload-side code { font-size: 0.75rem; white-space: normal; overflow-wrap: anywhere; }
+  .reload-side p { color: var(--text-dim); font-size: 0.78rem; margin: 8px 0 0; }
+  .reload-arrow { display: flex; align-items: center; justify-content: center; color: var(--green); font-size: 1.3rem; }
+
+  .timeline {
+    display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin: 20px 0;
+  }
+  .timeline-step {
+    border: 1px solid var(--border); border-radius: 9px; background: var(--surface);
+    padding: 11px 9px; text-align: center; min-width: 0;
+  }
+  .timeline-step b { display: block; color: var(--accent); font-size: 0.72rem; margin-bottom: 4px; }
+  .timeline-step span { color: var(--text-dim); font-size: 0.66rem; line-height: 1.4; }
+
+  @media (max-width: 680px) {
+    .ownership { grid-template-columns: 1fr; }
+    .policy-lab { grid-template-columns: 1fr; }
+    .reload-flow { grid-template-columns: 1fr; }
+    .reload-arrow { transform: rotate(90deg); min-height: 26px; }
+    .timeline { grid-template-columns: 1fr 1fr; }
+  }
+  @media (max-width: 440px) {
+    .state-pair, .policy-controls, .timeline { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<nav class="site-nav">
+  <a class="brand" href="../index.html"><span class="dot">◆</span> mz — engineering notes</a>
+  <span class="nav-links"><a href="../index.html">All posts</a></span>
+</nav>
+
+<header class="hero">
+  <div class="plane">👯</div>
+  <h1>Ensemble: keep the data, change the phase</h1>
+  <p class="sub">A source-level tour of <a href="https://github.com/mtzaquia/ensemble" target="_blank" rel="noopener">Ensemble 1.0</a> — a SwiftUI library that separates the latest useful value, asynchronous source lifetime, and each view's loading and failure policy.</p>
+  <div class="meta-row">
+    <span class="pill">Release <b>1.0.0</b></span>
+    <span class="pill">Swift Package • <b>iOS 17+ / macOS 14+</b></span>
+    <span class="pill">Swift <b>6.3</b> • MainActor by default</span>
+    <span class="pill">Observation • AsyncStream • SwiftUI</span>
+  </div>
+</header>
+
+<main>
+
+<nav class="toc">
+  <div class="toc-t">In this post</div>
+  <ol>
+    <li><a href="#problem">The latest event is not the latest useful UI</a></li>
+    <li><a href="#owners">Give state, lifetime, and rendering different owners</a></li>
+    <li><a href="#state">Keep the data when the phase changes</a></li>
+    <li><a href="#policy">Make presentation a view-local policy — interactive</a></li>
+    <li><a href="#recovery">Treat failure as an update, not a terminus</a></li>
+    <li><a href="#reload">Reload according to the source's lifetime</a></li>
+    <li><a href="#ordering">Make cancellation and competing work predictable</a></li>
+    <li><a href="#composition">Compose independent regions, not one screen-wide switch</a></li>
+    <li><a href="#verdict">Sharp edges, API reference, and verdict</a></li>
+  </ol>
+</nav>
+
+<h2 id="problem"><span class="kicker">Part 1</span>The latest event is not the latest useful UI</h2>
+
+<p class="lede">A refresh starts while yesterday's account summary is still perfectly useful. Then the request fails. The newest event is an error, but replacing the summary with a full-screen failure would make the interface less informative than it was before the request began.</p>
+
+<p>Many asynchronous view models make that replacement unavoidable. One enum carries <code>idle</code>, <code>loading</code>, <code>success(Value)</code>, and <code>failure(Error)</code>. Moving to <code>loading</code> throws away the successful case; moving to <code>failure</code> throws it away again. The view can preserve a second copy, but now cache ownership and request state have become application-specific coordination.</p>
+
+<p>The problem gets sharper on a composed screen. Activity may be waiting for its first response, the account card may be refreshing cached data, and a small tip may have failed. One screen-wide state either blocks sections that are ready or hides distinctions that matter.</p>
+
+<div class="callout">
+  <strong>The central idea.</strong> Ensemble keeps the current lifecycle phase and the latest successful value as separate facts. A source changes those facts; each <code>AsyncContent</code> decides what they mean for its own piece of UI.
+</div>
+
+<h2 id="owners"><span class="kicker">Part 2</span>Give state, lifetime, and rendering different owners</h2>
+
+<p>Ensemble's public model is small because it draws three ownership boundaries instead of building one all-purpose loader.</p>
+
+<div class="ownership" aria-label="The three ownership roles in Ensemble">
+  <div class="owner">
+    <span class="owner-type">ViewData&lt;Value&gt;</span>
+    <b>Owns presentation state</b>
+    <span>Stores the current phase, latest successful value, retry availability, and an opaque animation token.</span>
+  </div>
+  <div class="owner">
+    <span class="owner-type">ViewDataContext</span>
+    <b>Owns asynchronous work</b>
+    <span>Runs one-shot loads, retains stream factories, and owns at most one binding for each destination.</span>
+  </div>
+  <div class="owner">
+    <span class="owner-type">AsyncContent</span>
+    <b>Owns rendering policy</b>
+    <span>Maps one state into live, cached, placeholder, failure, or empty output without imposing a container.</span>
+  </div>
+</div>
+
+<pre><code class="swift">final class EntriesViewModel {
+  let entries = ViewData&lt;[Entry]&gt;()
+
+  private let context = ViewDataContext()
+  private let useCase: EntriesUseCase
+
+  init(useCase: EntriesUseCase) {
+    self.useCase = useCase
+  }
+
+  func start() {
+    context.bind(useCase.values, to: entries)
+  }
+}</code></pre>
+
+<p><code>ViewData</code> is observable, so a surrounding view model does not need observation solely to expose it. The context stays alive for as long as its subscriptions should stay alive. The view only receives the state it needs to render.</p>
+
+<p>This separation also keeps source mechanics out of SwiftUI. A list does not need to know whether its values came from one HTTP request, a database observation, or a long-lived stream. It needs to know whether the value is live, retained, or synthetic presentation input.</p>
+
+<h2 id="state"><span class="kicker">Part 3</span>Keep the data when the phase changes</h2>
+
+<p><code>ViewData</code> has four phases: empty, loading, success, and failure. Its separate <code>latest</code> property holds only the most recent successful value. Loading and failure change the phase without clearing that value.</p>
+
+<div class="state-pair" aria-label="Two facts stored by ViewData">
+  <div class="state-card">
+    <div class="cap">What just happened?</div>
+    <code>phase = .failure(error)</code>
+    <p>The current request or stream update failed.</p>
+  </div>
+  <div class="state-card">
+    <div class="cap">What is still useful?</div>
+    <code>latest = previousResponse</code>
+    <p>The most recent success remains available for cached presentation.</p>
+  </div>
+</div>
+
+<p>A seeded value starts in success immediately:</p>
+
+<pre><code class="swift">let entries = ViewData(cachedEntries)
+
+// A later binding enters loading, but cachedEntries remains in entries.latest.
+context.bind(useCase.values, to: entries)</code></pre>
+
+<p>A placeholder is different. <code>AsyncContentLoadingPolicy.placeholder</code> supplies a value only to the renderer when no success exists; it never installs that value in <code>latest</code>. The distinction prevents skeleton rows from becoming application data.</p>
+
+<p><code>reset()</code> is deliberately narrow in the other direction. It clears the phase and latest value but does not cancel a load or binding. A later accepted update can fill the state again. Cancellation belongs to the context or to the task awaiting a one-shot load.</p>
+
+<div class="callout">
+  <strong>Retention is not persistence.</strong> Ensemble keeps one successful value in memory. It does not decide how long data is fresh, write a disk cache, merge records, or resolve conflicts. Those remain source and application concerns.
+</div>
+
+<h2 id="policy"><span class="kicker">Part 4</span>Make presentation a view-local policy</h2>
+
+<p><code>AsyncContent</code> turns the two stored facts into a view. Without a failure builder, its defaults are intentionally quiet: before the first success, loading and failure render nothing; after a success, both retain the latest value. Supplying a failure builder makes replacement the failure default. A call site can choose cached failure instead, and can opt into placeholders when that region needs them.</p>
+
+<pre><code class="swift">AsyncContent(
+  viewModel.entries,
+  loading: .placeholder(Entry.placeholders),
+  failure: .cached
+) { entries, source in
+  EntryRows(entries: entries)
+    .redacted(reason: source == .placeholder ? .placeholder : [])
+} failure: { error, retry in
+  EntriesFailure(error: error, retry: retry)
+}</code></pre>
+
+<p>The success builder receives an <code>AsyncContentSource</code>: <code>.live</code>, <code>.cached</code>, or <code>.placeholder</code>. That gives the view enough context to add a stale badge or redaction without changing the stored value.</p>
+
+<p>Use the lab to answer one question: <strong>what does this view render as the lifecycle changes?</strong> Start from the seeded value, begin a refresh, fail it, and compare cached failure with replacement failure. Then reset the cache and repeat.</p>
+
+<div class="widget">
+  <div class="widget-title">Interactive — phase, retained value, and rendered output</div>
+  <div class="widget-body">
+    <div class="policy-controls">
+      <div class="policy-control">
+        <label for="ensemble-loading-policy">While loading</label>
+        <select id="ensemble-loading-policy">
+          <option value="placeholder">placeholder(value)</option>
+          <option value="cached">cached</option>
+          <option value="hidden">hidden</option>
+        </select>
+      </div>
+      <div class="policy-control">
+        <label for="ensemble-failure-policy">After failure</label>
+        <select id="ensemble-failure-policy">
+          <option value="builder-cached">cached + failure builder</option>
+          <option value="builder-replace">replace + failure builder</option>
+          <option value="fallback-cached">cached, no failure builder</option>
+          <option value="fallback-hidden">hidden, no failure builder</option>
+        </select>
+      </div>
+    </div>
+    <div class="btn-row">
+      <button class="ctl" id="ensemble-loading">Begin refresh</button>
+      <button class="ctl" id="ensemble-success">Receive success</button>
+      <button class="ctl" id="ensemble-failure">Receive failure</button>
+      <button class="ctl" id="ensemble-reset">Reset cache</button>
+      <button class="ctl primary" id="ensemble-restart">Restart lab</button>
+    </div>
+    <div class="policy-lab">
+      <div class="lab-panel">
+        <div class="cap">Internal ViewData state</div>
+        <div class="internal-row"><span>phase</span><span id="ensemble-phase">.success</span></div>
+        <div class="internal-row"><span>latest</span><span id="ensemble-latest">"Cached response"</span></div>
+        <div class="internal-row"><span>revision</span><span id="ensemble-revision">0</span></div>
+      </div>
+      <div class="lab-panel">
+        <div class="cap">AsyncContent output</div>
+        <div class="rendered-card" id="ensemble-rendered" aria-live="polite"></div>
+      </div>
+    </div>
+    <p class="lab-note" id="ensemble-note" aria-live="polite"></p>
+  </div>
+</div>
+
+<p>Notice that policies do not mutate the left-hand state. Switching from <code>.cached</code> to <code>.replace</code> changes the output while <code>phase</code> and <code>latest</code> stay put. Two views can therefore render the same <code>ViewData</code> differently without asking the source to publish a different model.</p>
+
+<p>The failure overloads encode one useful constraint in the type system. A view with a failure builder can choose <code>.cached</code> or <code>.replace</code>. A view without one gets a different policy type with <code>.cached</code> or <code>.hidden</code>; it cannot select a replacement view that does not exist.</p>
+
+<h2 id="recovery"><span class="kicker">Part 5</span>Treat failure as an update, not a terminus</h2>
+
+<p>A bound Ensemble source is a non-throwing <code>AsyncStream</code> whose elements are <code>Result</code> values. Failure lives inside the sequence rather than ending it.</p>
+
+<pre><code class="swift">func values() -> AsyncStream&lt;Result&lt;[Entry], EntryFailure&gt;&gt; {
+  AsyncStream { continuation in
+    continuation.yield(.failure(.offline))
+    continuation.yield(.success(recoveredEntries))
+    continuation.finish()
+  }
+}</code></pre>
+
+<p>The first element moves the destination to failure while preserving any previous success. The second replaces <code>latest</code> and moves back to success through the same subscription. The test suite exercises that exact failure-then-success sequence.</p>
+
+<p>This shape fits sources where outages are observations rather than terminal conditions: reachability-sensitive data, database listeners, or a producer that can recover after authentication changes. A cold request may still finish after emitting one result; Ensemble supports both lifetimes.</p>
+
+<div class="callout warn">
+  <strong>The stream factory must return promptly.</strong> <code>bind</code> calls it synchronously on the main actor. Networking, observation, and other expensive work belong in the stream's producer, not before the factory returns.
+</div>
+
+<p>A one-shot throwing operation uses <code>load(_:to:)</code> instead. Its error becomes presentation state rather than being rethrown, and cancellation does not become a visible failure. A load does not install a retry action because Ensemble has no factory to repeat; retry belongs to a bound source.</p>
+
+<h2 id="reload"><span class="kicker">Part 6</span>Reload according to the source's lifetime</h2>
+
+<p>“Reload” means different things to different sources. A cold source should create a new request. A hot source should usually keep listening and ask its existing producer to publish again. Ensemble makes that choice part of the binding.</p>
+
+<div class="reload-flow" aria-label="Cold and hot source reload behavior">
+  <div class="reload-side">
+    <b>Cold source · <code>.resubscribe</code></b>
+    <code>cancel old stream → call factory → consume new stream</code>
+    <p>The default for request-per-subscription sources. Late values from the replaced registration are ignored.</p>
+  </div>
+  <div class="reload-arrow">↔</div>
+  <div class="reload-side">
+    <b>Hot source · <code>.refresh(action)</code></b>
+    <code>keep stream → mark loading → signal producer</code>
+    <p>Preserves an active subscription. If it already completed, Ensemble reattaches before calling the action.</p>
+  </div>
+</div>
+
+<pre><code class="swift">// One request for every subscription.
+context.bind(useCase.values, to: entries)
+
+// One long-lived stream; tell its producer to refresh.
+context.bind(
+  useCase.values,
+  to: entries,
+  reload: .refresh(useCase.reload)
+)</code></pre>
+
+<p><code>context.reload(entries)</code> and the optional retry action passed to a failure builder use the same configured behavior. <code>.disabled</code> installs neither. The UI does not need a second switch statement to recreate source-specific logic.</p>
+
+<p>A completed hot sequence is a subtle hard case. On refresh, the context creates the next sequence before invoking the refresh action, ensuring the producer has a consumer for the result. The source still owns its buffering contract: if it deliberately drops values before iteration begins, it must coordinate that publication itself.</p>
+
+<h2 id="ordering"><span class="kicker">Part 7</span>Make cancellation and competing work predictable</h2>
+
+<p>A load and a binding may feed the same destination at the same time. Ensemble does not assign permanent priority to either one; accepted updates apply in arrival order. The latest success replaces <code>latest</code>, while a later loading or failure update preserves it.</p>
+
+<div class="timeline" aria-label="A load and binding updating one destination">
+  <div class="timeline-step"><b>Bind</b><span>phase becomes loading</span></div>
+  <div class="timeline-step"><b>Load</b><span>a one-shot operation also starts</span></div>
+  <div class="timeline-step"><b>Stream: 1</b><span>success installs value 1</span></div>
+  <div class="timeline-step"><b>Load: 2</b><span>later success installs value 2</span></div>
+  <div class="timeline-step"><b>Stream: 3</b><span>binding remains active and installs value 3</span></div>
+</div>
+
+<p>The implementation protects this rule with identity and loading tokens. Each destination has at most one registered binding. Rebinding cancels the old task, and its loop checks that its registration is still current before applying another value. A cancelled load only settles the loading transition it started; it cannot overwrite a newer bound success.</p>
+
+<p>Ownership completes the model:</p>
+
+<div class="table-scroll" role="region" aria-label="Ensemble work ownership and cancellation" tabindex="0">
+<table>
+  <thead><tr><th>Work</th><th>Owner</th><th>How it stops</th><th>What presentation keeps</th></tr></thead>
+  <tbody>
+    <tr><td>Binding</td><td><code>ViewDataContext</code></td><td><code>cancel</code>, rebinding, <code>cancelAll</code>, or context deinit</td><td>Existing success or failure; loading settles to cached success or empty</td></tr>
+    <tr><td>One-shot load</td><td>The task awaiting <code>load</code></td><td>Caller task cancellation</td><td>Cancellation is not shown as failure; a newer update wins</td></tr>
+    <tr><td>Presentation reset</td><td><code>ViewData</code></td><td><code>reset()</code> clears state, not work</td><td>Nothing until an active source supplies another update</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>The context retains the stream factory and any refresh closure. A bound method retains its instance. That is useful when a dedicated use case should share the context's lifetime, but passing a method on an owner that also retains the context creates a cycle. Use a separate source object or an intentional weak capture in that design.</p>
+
+<h2 id="composition"><span class="kicker">Part 8</span>Compose independent regions, not one screen-wide switch</h2>
+
+<p><code>AsyncContent</code> does not insert a <code>List</code>, <code>Section</code>, stack, or navigation container. Its output can be a whole screen, but it can just as naturally be one section inside a stable parent.</p>
+
+<pre><code class="swift">List {
+  AsyncContent(
+    viewModel.activity,
+    loading: .placeholder(Activity.placeholders),
+    failure: .replace
+  ) { activity, source in
+    ActivitySection(activity: activity, source: source)
+  } failure: { error, retry in
+    ActivityFailure(error: error, retry: retry)
+  }
+
+  AsyncContent(
+    viewModel.account,
+    loading: .cached,
+    failure: .cached
+  ) { account, source in
+    AccountSection(account: account, source: source)
+  } failure: { error, retry in
+    AccountFailure(error: error, retry: retry)
+  }
+}</code></pre>
+
+<p>Now activity can show placeholders while the account section retains its last value through a failed refresh. Each region owns a policy proportional to its importance; neither waits for the other.</p>
+
+<p>There is one SwiftUI lifecycle trap worth naming. Empty state renders <code>EmptyView</code>, so an initial <code>.task</code> attached directly to that output is not a reliable place to begin the binding. Attach startup work to a stable ancestor such as the surrounding <code>List</code> or <code>ZStack</code>.</p>
+
+<p>For animation, <code>ViewData.animationValue</code> advances on every accepted presentation change, including phase transitions, values, errors, reset, and changes to retry availability. It does not compare or retain <code>Value</code>, so non-<code>Equatable</code> models can still drive SwiftUI's value-scoped animation.</p>
+
+<pre><code class="swift">AsyncContent(viewModel.entries) { entries, _ in
+  EntryRows(entries: entries)
+}
+.animation(.default, value: viewModel.entries.animationValue)</code></pre>
+
+<p>Lifecycle diagnostics are opt-in with <code>Ensemble.debug = .normal</code> or <code>.trace</code>. Debug-build logs include a destination identity so independent regions can be separated, but they do not log loaded values.</p>
+
+<h2 id="verdict"><span class="kicker">Part 9</span>Sharp edges, API reference, and verdict</h2>
+
+<p>Ensemble makes asynchronous presentation smaller by refusing to collapse three decisions into one enum. That does leave real application work outside the package.</p>
+
+<div class="table-scroll" role="region" aria-label="Where Ensemble fits and what the application still owns" tabindex="0">
+<table>
+  <thead><tr><th>Ensemble is a strong fit when…</th><th>The application still decides…</th></tr></thead>
+  <tbody>
+    <tr><td>Useful data should survive refresh and failure.</td><td>Freshness rules, persistence, invalidation, and domain-specific empty states.</td></tr>
+    <tr><td>Several SwiftUI regions load and recover independently.</td><td>How those regions coordinate when the product requires an all-or-nothing result.</td></tr>
+    <tr><td>A source may recover after emitting a failure.</td><td>Buffering, backpressure, and upstream scheduling inside the producer.</td></tr>
+    <tr><td>Cold and hot sources need different reload behavior.</td><td>Whether a source truly represents a new subscription or an existing producer.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="callout warn">
+  <strong>Main-actor presentation is part of the contract.</strong> The package uses Swift 6.3, enables main-actor default isolation, and supports iOS 17 and macOS 14. Source producers remain responsible for their own scheduling, but state coordination and stream factory calls cross the main actor.
+</div>
+
+<p>Ensemble 1.0.0 is available through Swift Package Manager. Add the package dependency, attach the <code>Ensemble</code> product to the app target, and import it where presentation state is coordinated or rendered:</p>
+
+<pre><code class="swift">dependencies: [
+  .package(
+    url: "https://github.com/mtzaquia/ensemble.git",
+    from: "1.0.0"
+  )
+]</code></pre>
+
+<details class="api">
+  <summary><code>ViewData&lt;Value&gt;</code></summary>
+  <div class="api-body">
+    <p>Observable, main-actor presentation state with <code>phase</code>, retained <code>latest</code>, and <code>animationValue</code>. Initialize empty or with a successful value. <code>reset()</code> clears presentation without cancelling work.</p>
+  </div>
+</details>
+
+<details class="api">
+  <summary><code>ViewDataContext</code></summary>
+  <div class="api-body">
+    <p><code>load(_:to:)</code> applies one throwing async operation. <code>bind(_:to:reload:)</code> consumes a non-throwing result stream and retains its factory. <code>reload</code>, <code>cancel</code>, and <code>cancelAll</code> act on owned bindings.</p>
+  </div>
+</details>
+
+<details class="api">
+  <summary><code>AsyncContent</code> and its policies</summary>
+  <div class="api-body">
+    <p>Loading can be hidden, cached, or use a placeholder. With a failure builder, failure can retain cached content or replace it; without one, failure can retain cached content or stay hidden. The content builder receives a live, cached, or placeholder source marker.</p>
+  </div>
+</details>
+
+<details class="api">
+  <summary><code>ViewDataReloadBehavior</code> and retry</summary>
+  <div class="api-body">
+    <p><code>.resubscribe</code> replaces a cold source, <code>.refresh(action)</code> signals a hot producer, and <code>.disabled</code> exposes no reload. A reload-enabled binding supplies the same behavior through an optional <code>ViewDataRetryAction</code> to failure UI.</p>
+  </div>
+</details>
+
+<p>Adopt Ensemble when the hard part of asynchronous SwiftUI is no longer starting a task, but deciding what should remain useful while that task changes phase. Its best design choice is modest and consequential: a loading event can be current without being allowed to erase the last good answer.</p>
+
+<p>That makes retention explicit, recovery routine, and independently loading UI genuinely independent. In return, the application must accept the ownership model: keep contexts alive, classify sources honestly, attach startup work to stable views, and make persistence a separate concern.</p>
+
+<footer>
+  Written from <a href="https://github.com/mtzaquia/ensemble" target="_blank" rel="noopener">mtzaquia/ensemble</a> release <code>1.0.0</code> on July 24, 2026, including <code>Package.swift</code>, public source, package tests, guides, and the sample app and UI tests. All 22 Swift package tests passed for that release. The interactive lab is a deterministic model derived from <code>ViewData</code> and <code>AsyncContent</code>; it is not the production SwiftUI implementation.
+</footer>
+
+</main>
+
+<script src="../assets/site.js"></script>
+<script>
+(function () {
+  const state = {
+    phase: "success",
+    latest: "Cached response",
+    revision: 0,
+    generation: 1
+  };
+
+  const phase = document.getElementById("ensemble-phase");
+  const latest = document.getElementById("ensemble-latest");
+  const revision = document.getElementById("ensemble-revision");
+  const rendered = document.getElementById("ensemble-rendered");
+  const note = document.getElementById("ensemble-note");
+  const loadingPolicy = document.getElementById("ensemble-loading-policy");
+  const failurePolicy = document.getElementById("ensemble-failure-policy");
+
+  function advance(nextPhase) {
+    state.phase = nextPhase;
+    state.revision += 1;
+    render();
+  }
+
+  function output() {
+    if (state.phase === "empty") {
+      return { kind: "hidden", title: "EmptyView", source: null };
+    }
+
+    if (state.phase === "success") {
+      return state.latest
+        ? { kind: "content", title: state.latest, source: "live" }
+        : { kind: "hidden", title: "EmptyView", source: null };
+    }
+
+    if (state.phase === "loading") {
+      if (loadingPolicy.value === "hidden") {
+        return { kind: "hidden", title: "EmptyView", source: null };
+      }
+      if (state.latest) {
+        return { kind: "content", title: state.latest, source: "cached" };
+      }
+      if (loadingPolicy.value === "placeholder") {
+        return { kind: "placeholder", title: "Placeholder rows", source: "placeholder" };
+      }
+      return { kind: "hidden", title: "EmptyView", source: null };
+    }
+
+    if (failurePolicy.value === "builder-replace") {
+      return { kind: "failure", title: "Failure view · offline", source: null };
+    }
+    if (failurePolicy.value === "builder-cached") {
+      return state.latest
+        ? { kind: "content", title: state.latest, source: "cached" }
+        : { kind: "failure", title: "Failure view · offline", source: null };
+    }
+    if (failurePolicy.value === "fallback-cached" && state.latest) {
+      return { kind: "content", title: state.latest, source: "cached" };
+    }
+    return { kind: "hidden", title: "EmptyView", source: null };
+  }
+
+  function explanation(result) {
+    if (state.phase === "loading" && state.latest && result.source === "cached") {
+      return "The phase changed to loading, but the retained success remains the rendered value.";
+    }
+    if (state.phase === "loading" && result.source === "placeholder") {
+      return "No success exists, so the caller-supplied placeholder is rendered without entering latest.";
+    }
+    if (state.phase === "failure" && result.source === "cached") {
+      return "The error remains the current phase while cached policy keeps the last success visible.";
+    }
+    if (state.phase === "failure" && result.kind === "failure") {
+      return "The failure builder is visible. Replacement does not clear the retained value on the left.";
+    }
+    if (state.phase === "failure" && result.kind === "hidden") {
+      return "This overload and policy render nothing, even if state still retains a previous success.";
+    }
+    if (state.phase === "success") {
+      return "A successful update installs the value in latest and renders it as live content.";
+    }
+    if (state.phase === "empty") {
+      return "Reset cleared presentation state. The active source, if any, would still be able to update it.";
+    }
+    return "Policy changes affect rendering, not the ViewData facts on the left.";
+  }
+
+  function render() {
+    phase.textContent = "." + state.phase + (state.phase === "failure" ? "(offline)" : "");
+    latest.textContent = state.latest ? '"' + state.latest + '"' : "nil";
+    revision.textContent = String(state.revision);
+
+    const result = output();
+    rendered.className = "rendered-card " + result.kind;
+    rendered.innerHTML = "";
+
+    const title = document.createElement("div");
+    title.className = "rendered-title";
+    title.textContent = result.title;
+    rendered.appendChild(title);
+
+    if (result.source) {
+      const source = document.createElement("span");
+      source.className = "rendered-source " + result.source;
+      source.textContent = "source: ." + result.source;
+      rendered.appendChild(source);
+    }
+
+    note.textContent = explanation(result);
+  }
+
+  document.getElementById("ensemble-loading").addEventListener("click", function () {
+    advance("loading");
+  });
+
+  document.getElementById("ensemble-success").addEventListener("click", function () {
+    state.latest = "Response #" + state.generation;
+    state.generation += 1;
+    advance("success");
+  });
+
+  document.getElementById("ensemble-failure").addEventListener("click", function () {
+    advance("failure");
+  });
+
+  document.getElementById("ensemble-reset").addEventListener("click", function () {
+    state.latest = null;
+    advance("empty");
+  });
+
+  document.getElementById("ensemble-restart").addEventListener("click", function () {
+    state.phase = "success";
+    state.latest = "Cached response";
+    state.revision = 0;
+    state.generation = 1;
+    loadingPolicy.value = "placeholder";
+    failurePolicy.value = "builder-cached";
+    render();
+  });
+
+  loadingPolicy.addEventListener("change", render);
+  failurePolicy.addEventListener("change", render);
+  render();
+}());
+</script>
+</body>
+</html>
