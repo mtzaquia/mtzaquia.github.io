@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gamma — Compile the vocabulary, resolve the value</title>
+<link rel="stylesheet" href="../assets/blog.css">
+<style>
+  .gamma-flow { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 24px 0; }
+  .gamma-flow > div { border: 1px solid var(--border); border-radius: 9px; background: var(--surface); padding: 13px 11px; min-width: 0; }
+  .gamma-flow b { display: block; color: var(--accent); font-size: 0.75rem; margin-bottom: 5px; }
+  .gamma-flow span { display: block; color: var(--text-dim); font-size: 0.72rem; line-height: 1.45; }
+  .gamma-scope { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 20px 0; }
+  .gamma-scope > div { border: 1px solid var(--border); border-radius: 10px; background: var(--surface); padding: 15px; min-width: 0; }
+  .gamma-scope b { display: block; color: var(--accent); font: 0.75rem "SF Mono", ui-monospace, monospace; margin-bottom: 7px; overflow-wrap: anywhere; }
+  .gamma-scope span { display: block; color: var(--text-dim); font-size: 0.8rem; line-height: 1.5; }
+  .gamma-controls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
+  .gamma-control label { display: block; color: var(--text-dim); font-size: 0.7rem; margin-bottom: 5px; }
+  .gamma-control select { width: 100%; border: 1px solid var(--border); border-radius: 8px; background: var(--code-bg); color: var(--text); padding: 9px 10px; font: 0.76rem "SF Mono", ui-monospace, monospace; }
+  .gamma-control select:focus { outline: 2px solid rgba(94,176,255,0.35); border-color: var(--accent); }
+  .gamma-lab { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: 14px; }
+  .gamma-preview { border: 1px solid var(--border); border-radius: 12px; padding: 18px; min-width: 0; transition: background 0.18s, color 0.18s; }
+  .gamma-preview-card { border-radius: 20px; padding: 18px; min-height: 180px; display: flex; flex-direction: column; justify-content: space-between; transition: all 0.18s; }
+  .gamma-preview-card h3 { margin: 0 0 5px; font-size: 1.15rem; color: inherit; }
+  .gamma-preview-card p { margin: 0; font-size: 0.8rem; color: inherit; opacity: 0.76; }
+  .gamma-preview-card p code { background: transparent; border-color: currentColor; color: inherit; }
+  .gamma-preview-badge { align-self: flex-start; border: 1px solid currentColor; border-radius: 999px; padding: 4px 9px; font: 0.68rem "SF Mono", ui-monospace, monospace; margin-top: 28px; }
+  .gamma-trace-panel { border: 1px solid var(--border); border-radius: 10px; background: var(--code-bg); padding: 15px; min-width: 0; }
+  .gamma-cap { color: var(--text-dim); font-size: 0.66rem; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 10px; }
+  .gamma-trace { list-style: none; margin: 0; padding: 0; font: 0.72rem/1.55 "SF Mono", ui-monospace, monospace; }
+  .gamma-trace li { border-left: 2px solid var(--border); color: var(--text-dim); margin: 0 0 8px; padding: 1px 0 1px 10px; overflow-wrap: anywhere; }
+  .gamma-trace li.active { border-left-color: var(--accent); color: var(--text); }
+  .gamma-trace li.override { border-left-color: var(--amber); color: var(--amber); }
+  .gamma-trace li.value { border-left-color: var(--green); color: var(--green); }
+  .gamma-result { color: var(--text-dim); font-size: 0.8rem; min-height: 44px; margin: 14px 0 0; }
+  .gamma-result code { white-space: normal; overflow-wrap: anywhere; }
+  @media (max-width: 640px) {
+    .gamma-flow, .gamma-scope, .gamma-controls, .gamma-lab { grid-template-columns: 1fr; }
+    .gamma-preview-card { min-height: 150px; }
+  }
+</style>
+</head>
+<body>
+
+<nav class="site-nav">
+  <a class="brand" href="../index.html"><span class="dot">◆</span> mz — engineering notes</a>
+  <span class="nav-links"><a href="../index.html">All posts</a></span>
+</nav>
+
+<header class="hero">
+  <div class="plane">🌅</div>
+  <h1>Gamma: compile the vocabulary, resolve the value</h1>
+  <p class="sub">A source-level tour of <a href="https://github.com/mtzaquia/gamma" target="_blank" rel="noopener">Gamma</a> — a SwiftUI design-system foundation that turns a JSON token contract into typed aliases, then resolves their values from the current environment and view scope.</p>
+  <div class="meta-row">
+    <span class="pill">Release <b>2.0.0</b></span>
+    <span class="pill">Swift Package • <b>iOS 17+ / macOS 14+</b></span>
+    <span class="pill">Swift <b>6.3</b> • MainActor by default</span>
+    <span class="pill">MIT License</span>
+  </div>
+</header>
+
+<main>
+
+<nav class="toc">
+  <div class="toc-t">In this post</div>
+  <ol>
+    <li><a href="#drift">A design system can drift without changing its source file</a></li>
+    <li><a href="#contract">Compile the vocabulary, keep the values replaceable</a></li>
+    <li><a href="#scopes">Use one alias in two kinds of contract</a></li>
+    <li><a href="#resolution">Let the environment choose the concrete value</a></li>
+    <li><a href="#overrides">Replace a subtree without inventing a second theme</a></li>
+    <li><a href="#pressure">Remote themes, custom families, and honest failure</a></li>
+    <li><a href="#verdict">API reference, limits, and verdict</a></li>
+  </ol>
+</nav>
+
+<h2 id="drift"><span class="kicker">Part 1</span>A design system can drift without changing its source file</h2>
+
+<p class="lede">A design system usually begins with a tidy promise: define a palette, a type scale, and a spacing scale once, then use them everywhere. The drift begins in the translation. A JSON key becomes a handwritten Swift constant; a component accepts any <code>CGFloat</code>; dark appearance is a switch in one view; an Arabic font is selected in another; a campaign duplicates half the palette to change three values.</p>
+
+<p>The source of truth may still be pristine. The application has quietly created several more sources of truth in the code that interprets it. Renaming <code>spacing/medium</code> can leave an old string alive in one feature. Passing a corner-radius token where a component expects padding still type-checks because both happen to be numbers. A remotely delivered theme may decode successfully even though it no longer contains a token the binary was built to use.</p>
+
+<p>Gamma draws a line between two things that design-system tooling often fuses: <strong>the token vocabulary is a compile-time contract; the token values and mode policy remain runtime data.</strong> A build plugin reads the same theme file the app bundles, generates typed Swift aliases from its keys, and fails the build when several theme variants disagree about that alias surface. At runtime, a resolver maps the current SwiftUI environment to the mode names in the active theme.</p>
+
+<div class="callout">
+  <strong>The central idea.</strong> Gamma solves drift between theme data and view code by compiling stable token identity into Swift while resolving replaceable values only where a view has an environment and a scope.
+</div>
+
+<p>That division is the useful design decision. It makes spelling and semantic groups visible to the compiler without freezing a brand color, a responsive spacing value, a script-specific font, or a server-provided theme into the binary.</p>
+
+<h2 id="contract"><span class="kicker">Part 2</span>Compile the vocabulary, keep the values replaceable</h2>
+
+<p>A Gamma theme is ordinary JSON with one identity, defaults, and token families. Each token has a complete key, a semantic group, and one or more named modes. The mode names belong to the design system. The sample theme uses <code>day</code> and <code>night</code> for colors, <code>latin</code> and <code>arabic</code> for fonts, and <code>compact</code> and <code>regular</code> for units.</p>
+
+<pre><code class="json">{
+  "id": "gamma-sample",
+  "colors": {
+    "brand/accent": {
+      "name": "Accent",
+      "group": "brand",
+      "modes": {
+        "day":   { "hex": "#5B4CF0", "alpha": 1 },
+        "night": { "hex": "#9A91FF", "alpha": 1 }
+      }
+    }
+  },
+  "units": {
+    "spacing/medium": {
+      "name": "Medium",
+      "group": "spacing",
+      "modes": { "compact": 16, "regular": 24 }
+    }
+  }
+}</code></pre>
+
+<p>Attach <code>GammaBuildPlugin</code> to the consuming target and keep the <code>*.theme.json</code> file in that target. The plugin discovers theme files recursively, validates their alias contracts, and emits a bundled resource handle plus declarations such as <code>ThemeResource.app</code>, <code>.brandAccent</code>, and <code>.spacingMedium</code>. It uses the JSON key as the alias raw value; the generated member is a Swift spelling for that key, not a copied design value.</p>
+
+<div class="gamma-flow" aria-label="Gamma theme flow from source data to a rendered value">
+  <div><b>1 · describe</b><span>JSON owns token keys, groups, mode names, and concrete payloads.</span></div>
+  <div><b>2 · generate</b><span>The build emits typed aliases and a bundled <code>ThemeResource</code>.</span></div>
+  <div><b>3 · install</b><span>A root modifier validates the theme, registers supplied fonts, and writes it into the environment.</span></div>
+  <div><b>4 · resolve</b><span><code>@ThemeReader</code> combines alias, resolver policy, environment, and local overrides.</span></div>
+</div>
+
+<pre><code class="swift">@main
+struct ExampleApp: App {
+  var body: some Scene {
+    WindowGroup {
+      ContentView()
+        .theme(
+          .app,
+          modeResolver: AppThemeModeResolver(),
+          fontURLs: AppFonts.urls
+        )
+    }
+  }
+}</code></pre>
+
+<p>The generated resource and the generated alias surface come from the same build input. A bundled resource is decoded once per resource-and-bundle pair and reuses that identity during later SwiftUI evaluations. A downloaded <code>RawTheme</code> enters the same runtime path, but it must preserve the alias keys compiled into the app. Gamma does not pretend that a server can add a brand-new Swift member to an already shipped binary.</p>
+
+<div class="callout warn">
+  <strong>Generation is not bundling.</strong> In a Swift package target, the theme still needs a resource declaration. The plugin creates Swift declarations; target resources make the JSON available when the app runs.
+</div>
+
+<h2 id="scopes"><span class="kicker">Part 3</span>Use one alias in two kinds of contract</h2>
+
+<p>Colors, fonts, and units each form a family. A token’s <code>group</code> adds a narrower semantic scope inside that family. For <code>spacing/medium</code>, Gamma generates the same accessor on a family alias and on <code>Theme.Units.SpacingAlias</code>. Those two types answer different design questions.</p>
+
+<div class="gamma-scope" aria-label="Family and group alias responsibilities">
+  <div><b>Theme.Alias&lt;Theme.Units&gt;</b><span>Composition surface. A property or switch may choose spacing, radius, size, or any other unit group, because every case still resolves to a unit.</span></div>
+  <div><b>Theme.Units.SpacingAlias</b><span>Restriction surface. A component parameter can accept spacing tokens while rejecting radius and size tokens before the app runs.</span></div>
+</div>
+
+<p>This is more than generated autocomplete. Consider a card whose measurements all resolve to <code>CGFloat</code>. A loosely typed API cannot distinguish correct values from plausible mistakes. A Gamma component can carry the design-system distinction in its initializer:</p>
+
+<pre><code class="swift">struct TokenCard&lt;Content: View&gt;: View {
+  let background: Theme.Colors.SurfaceAlias
+  let foreground: Theme.Colors.TextAlias
+  let padding: Theme.Units.SpacingAlias
+  let cornerRadius: Theme.Units.RadiusAlias
+  @ViewBuilder let content: Content
+
+  @ThemeReader private var theme
+
+  var body: some View {
+    content
+      .foregroundStyle(theme.color(foreground))
+      .padding(theme.unit(padding))
+      .background(theme.color(background))
+      .clipShape(
+        RoundedRectangle(cornerRadius: theme.unit(cornerRadius))
+      )
+  }
+}</code></pre>
+
+<p><code>.spacingMedium</code> and <code>.radiusCard</code> both work with the family-wide <code>theme.unit(...)</code> resolver, yet exchanging them in this initializer is a compile-time error. The group restricts the component boundary; the family determines the output type and resolution machinery.</p>
+
+<p>The broader alias remains important. Application logic may need to choose across groups while preserving one family contract:</p>
+
+<pre><code class="swift">var measurement: Theme.Alias&lt;Theme.Units&gt; {
+  switch role {
+  case .contentInset: .spacingMedium
+  case .cardCornerRadius: .radiusCard
+  }
+}</code></pre>
+
+<p>Empty groups do not produce an artificial scope. A slash-free token such as <code>body</code> stays family-only. Grouped keys, meanwhile, must contain exactly two non-empty components and begin with their declared group. Code generation rejects collisions after Swift-name normalization rather than silently choosing one declaration.</p>
+
+<h2 id="resolution"><span class="kicker">Part 4</span>Let the environment choose the concrete value</h2>
+
+<p>A view never asks the JSON directly for <code>day</code>, <code>arabic</code>, or <code>regular</code>. It asks for <code>.brandAccent</code>, <code>.typographyBody</code>, or <code>.spacingMedium</code>. A <code>ThemeModeResolving</code> value owns the policy that translates the current environment into the theme’s vocabulary.</p>
+
+<pre><code class="swift">struct AppThemeModeResolver: ThemeModeResolving {
+  func modes(for context: ThemeModeContext) -> ThemeModes {
+    ThemeModes(
+      colors: .init(light: "day", dark: "night"),
+      fonts: context.layoutDirection == .rightToLeft
+        ? .init(primary: "arabic", cascades: ["latin"])
+        : .init(primary: "latin", cascades: ["arabic"]),
+      units: context.horizontalSizeClass == .regular
+        ? "regular"
+        : "compact"
+    )
+  }
+}</code></pre>
+
+<p><code>@ThemeReader</code> participates in SwiftUI’s dynamic-property lifecycle. During an update, it captures one coherent snapshot of the active theme, resolver, color scheme, layout direction, horizontal size class, and override identity. Every token read during that body evaluation uses the same resolver result. Dynamic Type remains part of font application because the concrete font must be rebuilt for the requested size.</p>
+
+<p>Use this model to answer one question: <strong>what does the same component contract resolve to in this subtree?</strong> Change appearance, width, and scope. The component keeps reading the same aliases; only the selected modes and active token values change. The values come directly from Gamma’s SampleApp theme and campaign override.</p>
+
+<div class="widget">
+  <div class="widget-title">Interactive — follow unchanged aliases to their values</div>
+  <div class="widget-body">
+    <div class="gamma-controls">
+      <div class="gamma-control">
+        <label for="gamma-appearance">SwiftUI appearance</label>
+        <select id="gamma-appearance">
+          <option value="light">Light</option>
+          <option value="dark">Dark</option>
+        </select>
+      </div>
+      <div class="gamma-control">
+        <label for="gamma-width">Horizontal width profile</label>
+        <select id="gamma-width">
+          <option value="compact">Compact</option>
+          <option value="regular">Regular</option>
+        </select>
+      </div>
+      <div class="gamma-control">
+        <label for="gamma-scope">Theme scope</label>
+        <select id="gamma-scope">
+          <option value="base">Base theme</option>
+          <option value="campaign">Campaign override</option>
+        </select>
+      </div>
+    </div>
+    <div class="btn-row">
+      <button class="ctl" id="gamma-reset">Reset to light, compact, base</button>
+    </div>
+    <div class="gamma-lab">
+      <div class="gamma-preview" id="gamma-preview">
+        <div class="gamma-preview-card" id="gamma-card">
+          <div>
+            <h3>Design review</h3>
+            <p>The view still asks for <code>.brandAccent</code>, <code>.spacingMedium</code>, and <code>.radiusCard</code>.</p>
+          </div>
+          <span class="gamma-preview-badge" id="gamma-badge">Base · day · compact</span>
+        </div>
+      </div>
+      <div class="gamma-trace-panel">
+        <div class="gamma-cap">Resolution snapshot</div>
+        <ol class="gamma-trace" id="gamma-trace" aria-live="polite"></ol>
+      </div>
+    </div>
+    <p class="gamma-result" id="gamma-result" aria-live="polite"></p>
+  </div>
+</div>
+
+<p>Colors receive a pair of selected modes and become a dynamic platform color, so one returned value follows light and dark appearance. Units resolve one selected mode. Fonts resolve one primary mode plus ordered cascade modes, then Gamma’s font modifier applies scaling, line spacing, letter spacing, and text case. A custom family can define its own mode payload and add a typed assignment to the same <code>ThemeModes</code> result.</p>
+
+<p>Resolved caches include the decoded theme identity, composed override identity, resolver identity, and relevant environment context. This is why a compact value cannot leak into a regular-width subtree, and why two identical aliases under different overrides do not accidentally share a concrete result.</p>
+
+<h2 id="overrides"><span class="kicker">Part 5</span>Replace a subtree without inventing a second theme</h2>
+
+<p>A campaign card, partner flow, or accessibility treatment may need a local visual voice. Copying the entire theme creates another document that can drift. Gamma instead transforms the active <code>RawTheme</code> for one view subtree. Siblings and ancestors continue to read the base theme.</p>
+
+<pre><code class="swift">let campaign = ThemeOverrides(tokens: [
+  try ThemeTokenOverride(
+    Theme.Colors.BrandAlias.brandAccent,
+    modes: [
+      "day": .init(hex: "#D63F77", alpha: 1),
+      "night": .init(hex: "#FF82AD", alpha: 1)
+    ]
+  ),
+  try ThemeTokenOverride(
+    Theme.Units.RadiusAlias.radiusCard,
+    modes: ["compact": 8, "regular": 12]
+  )
+])
+
+WithThemeOverrides(overrides: campaign) {
+  CampaignCard()
+}</code></pre>
+
+<p>An override replaces the complete mode dictionary for one existing token. It does not merge individual modes, introduce a new family, or invent an alias that generated Swift does not know. That rule makes a remotely supplied treatment self-contained: an old base value cannot unexpectedly fill a mode the override forgot to provide.</p>
+
+<p>Nested overrides are ordered transformations. Their identity combines with the parent identity, and tests verify that reversing the nesting order produces a different cache scope. The transformed theme is validated against the active resolver, including registered extension families, before descendants resolve it.</p>
+
+<div class="callout warn">
+  <strong>Overrides carry values, not infrastructure.</strong> If an overridden font names a custom face, the app must make that file available at the root theme installation. <code>WithThemeOverrides</code> does not download or register font files.
+</div>
+
+<h2 id="pressure"><span class="kicker">Part 6</span>Remote themes, custom families, and honest failure</h2>
+
+<p>The alias pattern is not limited to color, typography, and units. A consumer-defined <code>ThemeExtension</code> supplies a codable mode payload, and Gamma generates family and group aliases for its JSON root. The SampleApp defines a gradient mode as an ordered list of color-token keys. Its app-owned <code>ThemeProxy.gradient(...)</code> helper resolves the selected gradient payload, then resolves each stop through Gamma’s color family.</p>
+
+<pre><code class="swift">extension ThemeProxy {
+  func gradient&lt;Scope: ThemeAliasScope&gt;(
+    _ alias: Theme.Alias&lt;Scope&gt;
+  ) -> LinearGradient where Scope.Family == Theme.Gradients {
+    guard let mode = resolve(alias) else {
+      return LinearGradient(colors: [.clear], startPoint: .top, endPoint: .bottom)
+    }
+
+    return LinearGradient(
+      colors: mode.stops.map {
+        color(Theme.Alias&lt;Theme.Colors&gt;(rawValue: $0))
+      },
+      startPoint: .topLeading,
+      endPoint: .bottomTrailing
+    )
+  }
+}</code></pre>
+
+<p>The library owns decoding, validation, supplied local-font registration, environment activation, and resolution. The application owns transport, storage, rollout policy, and loading UI for server themes. Publishing a decoded theme together with its completed local font URLs avoids a state where the new values render before their files exist.</p>
+
+<p>Gamma checks failure at the closest useful boundary. Malformed built-in schema fails decoding. Alias collisions and disagreement among bundled theme variants fail generation. Resolver-selected modes and registered custom families are validated during installation and when resolution context changes. Missing compiled aliases that are not part of the defaults surface when a view actually reads them.</p>
+
+<p>Debug builds assert on invalid configuration after emitting a consolidated diagnostic. Release resolution remains total for built-in families: colors fall back to black in light appearance and white in dark, fonts fall back to a system font, and units fall back to zero. A custom-family resolver returns <code>nil</code> so the app-owned conversion method can supply a domain fallback.</p>
+
+<div class="table-scroll" role="region" aria-label="Gamma failure boundaries and owners" tabindex="0">
+<table>
+  <thead><tr><th>Pressure</th><th>Gamma’s boundary</th><th>Application responsibility</th></tr></thead>
+  <tbody>
+    <tr><td>Theme variants drift</td><td>Generation compares their alias contracts and fails with both file paths.</td><td>Decide which variants belong to one compiled product surface.</td></tr>
+    <tr><td>Server theme changes</td><td>Runtime data uses the compiled alias and validation contract.</td><td>Fetch, cache, version, and publish theme plus font files coherently.</td></tr>
+    <tr><td>Missing or invalid mode</td><td>Diagnostics, debug assertion, and deterministic release fallback.</td><td>Choose resolver policy and decide whether fallback is acceptable for the product.</td></tr>
+    <tr><td>New token family</td><td>Shared generation, selection, validation, override, and resolution machinery.</td><td>Define the payload and convert its resolved mode into a renderable value.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2 id="verdict"><span class="kicker">Part 7</span>API reference, limits, and verdict</h2>
+
+<details class="api">
+  <summary><code>.theme(...)</code> and <code>@ThemeReader</code></summary>
+  <div class="api-body">
+    <p>Install a generated <code>ThemeResource</code> or decoded <code>RawTheme</code> at a view root, optionally with a custom resolver, local font URLs, and extension registrations. Read the active snapshot through <code>@ThemeReader</code>, then call <code>color</code>, <code>font</code>, <code>unit</code>, or an app-owned custom-family helper.</p>
+  </div>
+</details>
+<details class="api">
+  <summary><code>Theme.Alias</code>, families, and generated groups</summary>
+  <div class="api-body">
+    <p>A family alias composes any token that resolves to the same output kind. A generated group alias narrows a component parameter to one semantic group. Aliases are <code>RawRepresentable</code>, <code>Codable</code>, <code>Hashable</code>, and <code>Sendable</code>; their encoded form is the complete token-key string.</p>
+  </div>
+</details>
+<details class="api">
+  <summary><code>ThemeModeResolving</code> and <code>ThemeModes</code></summary>
+  <div class="api-body">
+    <p>A resolver receives color scheme, layout direction, and optional horizontal size class. It must provide color, font, and unit selections, plus typed assignments for registered custom families. Stateful policy exposes <code>cacheIdentity</code> so concrete token caches follow policy changes.</p>
+  </div>
+</details>
+<details class="api">
+  <summary><code>ThemeOverrides</code> and <code>ThemeExtension</code></summary>
+  <div class="api-body">
+    <p>Overrides replace complete mode dictionaries for existing tokens inside one subtree. Extensions add app-owned token payloads to Gamma’s generation and runtime pipeline; the app supplies a proxy conversion method and fallback.</p>
+  </div>
+</details>
+
+<div class="table-scroll" role="region" aria-label="Gamma adoption guide" tabindex="0">
+<table>
+  <thead><tr><th>Gamma shines when…</th><th>Watch for…</th></tr></thead>
+  <tbody>
+    <tr><td>A product needs runtime theme values without returning to handwritten string keys in SwiftUI.</td><td>A server theme cannot change the alias surface of an already compiled binary.</td></tr>
+    <tr><td>Components should distinguish semantic token groups even when their concrete Swift types match.</td><td>The team still has to design a coherent token vocabulary and group taxonomy.</td></tr>
+    <tr><td>Appearance, writing direction, width, and local campaigns should change values without changing component code.</td><td>Resolver policy must stay deterministic, cheap, and represented in cache identity when stateful.</td></tr>
+    <tr><td>Custom token families should share validation, modes, overrides, and environment activation.</td><td>The app owns custom payload rendering plus remote transport, persistence, and rollout UX.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>Gamma is a good fit when a design system needs both a stable language and replaceable expression. Its generated aliases keep views and component contracts attached to the vocabulary the binary understands; its resolver and subtree overrides keep concrete values responsive to environment, brand, and local context. The tradeoff is deliberate: teams must treat token identity as an API, not as a bag of remote strings. Once they do, design changes can move at runtime without asking every view to reinterpret the system for itself.</p>
+
+<footer>
+  <p><strong>Provenance.</strong> This post is based on the public <a href="https://github.com/mtzaquia/gamma" target="_blank" rel="noopener">Gamma repository</a>, Release 2.0.0, including its Swift 6.3 package manifest, README, topic guides, public implementation, tests, and SampleApp. The interactive resolver is a simplified, deterministic model derived from the SampleApp theme, resolver, and campaign overrides; it does not execute Gamma or use production data.</p>
+</footer>
+
+</main>
+
+<script src="../assets/site.js"></script>
+<script>
+(() => {
+  const appearance = document.getElementById("gamma-appearance");
+  const width = document.getElementById("gamma-width");
+  const scope = document.getElementById("gamma-scope");
+  const reset = document.getElementById("gamma-reset");
+  const preview = document.getElementById("gamma-preview");
+  const card = document.getElementById("gamma-card");
+  const badge = document.getElementById("gamma-badge");
+  const trace = document.getElementById("gamma-trace");
+  const result = document.getElementById("gamma-result");
+
+  const values = {
+    base: {
+      accent: { day: "#5B4CF0", night: "#9A91FF" },
+      surface: { day: "#FFFFFF", night: "#20232C" },
+      text: { day: "#171A21", night: "#F6F7FB" },
+      spacing: { compact: 16, regular: 24 },
+      radius: { compact: 20, regular: 28 }
+    },
+    campaign: {
+      accent: { day: "#D63F77", night: "#FF82AD" },
+      surface: { day: "#FFFFFF", night: "#20232C" },
+      text: { day: "#171A21", night: "#F6F7FB" },
+      spacing: { compact: 16, regular: 24 },
+      radius: { compact: 8, regular: 12 }
+    }
+  };
+
+  function addTrace(text, className) {
+    const item = document.createElement("li");
+    item.textContent = text;
+    item.className = className;
+    trace.appendChild(item);
+  }
+
+  function render() {
+    const mode = appearance.value === "dark" ? "night" : "day";
+    const profile = width.value;
+    const activeScope = scope.value;
+    const selected = values[activeScope];
+    const accent = selected.accent[mode];
+    const surface = selected.surface[mode];
+    const text = selected.text[mode];
+    const spacing = selected.spacing[profile];
+    const radius = selected.radius[profile];
+
+    preview.style.background = appearance.value === "dark" ? "#111319" : "#F3F5FA";
+    card.style.background = surface;
+    card.style.color = text;
+    card.style.border = "2px solid " + accent;
+    card.style.borderRadius = radius + "px";
+    card.style.padding = spacing + "px";
+    badge.style.color = accent;
+    badge.textContent = (activeScope === "campaign" ? "Campaign" : "Base") + " · " + mode + " · " + profile;
+
+    trace.innerHTML = "";
+    addTrace("ThemeProxy captures one environment snapshot", "active");
+    addTrace("colors → day/night pair; visible appearance → " + mode, "active");
+    addTrace("units → " + profile, "active");
+    if (activeScope === "campaign") {
+      addTrace("override replaces brand/accent and radius/card mode dictionaries", "override");
+    } else {
+      addTrace("overrideHash = 0; read base theme values", "");
+    }
+    addTrace(".brandAccent → " + accent, "value");
+    addTrace(".spacingMedium → " + spacing + " pt", "value");
+    addTrace(".radiusCard → " + radius + " pt", "value");
+
+    result.innerHTML = "The component contract did not change. <code>.brandAccent</code>, <code>.spacingMedium</code>, and <code>.radiusCard</code> resolved inside the " + activeScope + " scope using the " + mode + " color modes and " + profile + " unit mode.";
+  }
+
+  [appearance, width, scope].forEach(control => control.addEventListener("change", render));
+  reset.addEventListener("click", () => {
+    appearance.value = "light";
+    width.value = "compact";
+    scope.value = "base";
+    render();
+  });
+  render();
+})();
+</script>
+</body>
+</html>
